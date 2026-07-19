@@ -9,7 +9,7 @@ import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 
 /// Kinds of overlay a user can flatten onto a PDF page in the editor.
-enum PdfOverlayType { text, image, highlight, ink, underline, redact }
+enum PdfOverlayType { text, image, highlight, ink, underline, redact, ocrText }
 
 enum PageNumberPosition {
   topLeft, topCenter, topRight,
@@ -461,6 +461,23 @@ class PdfToolsService {
               overlay.rect.height * size.height,
             ),
           );
+          break;
+        case PdfOverlayType.ocrText:
+          // Draw invisible text layer for searchability
+          g.save();
+          g.setTransparency(0);
+          g.drawString(
+            overlay.text,
+            PdfStandardFont(PdfFontFamily.helvetica, overlay.fontSize),
+            brush: PdfSolidBrush(PdfColor(0, 0, 0)),
+            bounds: Rect.fromLTWH(
+              overlay.rect.left * size.width,
+              overlay.rect.top * size.height,
+              overlay.rect.width * size.width,
+              overlay.rect.height * size.height,
+            ),
+          );
+          g.restore();
           break;
       }
     }

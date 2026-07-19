@@ -7,6 +7,7 @@ import 'package:signature/signature.dart';
 import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/core/services/pdf_render_service.dart';
 import 'package:xscan/core/services/pdf_tools_service.dart';
+import 'package:xscan/features/scanner/services/ocr_service.dart';
 import 'package:xscan/features/tools/services/tool_io.dart';
 
 enum _EditMode { move, highlight, draw, redact }
@@ -255,6 +256,21 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       case PdfOverlayType.redact:
         content = Container(color: o.color);
         break;
+      case PdfOverlayType.ocrText:
+        content = Container(
+          decoration: BoxDecoration(
+            color: Colors.yellow.withValues(alpha: 0.3),
+            border: Border.all(color: Colors.orange, width: 1),
+          ),
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.all(2),
+          child: Text(
+            o.text,
+            style: TextStyle(color: Colors.black87, fontSize: (o.fontSize * 0.8).clamp(8, 24)),
+            maxLines: null,
+          ),
+        );
+        break;
     }
 
     final movable = o.type != PdfOverlayType.ink;
@@ -265,17 +281,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       width: width,
       height: height,
       child: GestureDetector(
-        onTap: () => setState(() => _selected = o),
-        onPanUpdate: !movable
-            ? null
-            : (d) {
-                setState(() {
-                  _selected = o;
-                  final dx = d.delta.dx / size.width;
-                  final dy = d.delta.dy / size.height;
-                  o.rect = o.rect.translate(dx, dy);
-                });
-              },
+        onTap: () {
+          setState(() => _selected = o);
+          if (o.type == PdfOverlayType.ocrText) {
+            _editOcrText(o);
+          }
+        },
         onScaleStart: !movable
             ? null
             : (details) {
@@ -289,17 +300,25 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 setState(() {
                   _selected = o;
                   if (_scaleStartRect == null) return;
-                  final newScale = details.scale;
-                  final factor = newScale / _scaleStart;
                   final r = _scaleStartRect!;
-                  final newW = (r.width * factor).clamp(0.05, 0.95);
-                  final newH = (r.height * factor).clamp(0.05, 0.95);
-                  o.rect = Rect.fromLTWH(
-                    r.left + (r.width - newW) / 2,
-                    r.top + (r.height - newH) / 2,
-                    newW,
-                    newH,
-                  );
+                  if (details.scale == 1.0) {
+                    // Single finger — pan
+                    final dx = details.focalPointDelta.dx / size.width;
+                    final dy = details.focalPointDelta.dy / size.height;
+                    o.rect = r.translate(dx, dy);
+                    _scaleStartRect = o.rect;
+                  } else {
+                    // Multi-finger — scale
+                    final factor = details.scale / _scaleStart;
+                    final newW = (r.width * factor).clamp(0.05, 0.95);
+                    final newH = (r.height * factor).clamp(0.05, 0.95);
+                    o.rect = Rect.fromLTWH(
+                      r.left + (r.width - newW) / 2,
+                      r.top + (r.height - newH) / 2,
+                      newW,
+                      newH,
+                    );
+                  }
                 });
               },
         onScaleEnd: !movable
@@ -375,6 +394,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                   ? _EditMode.move
                   : _EditMode.redact);
             }),
+            _toolButton(Icons.text_snippet, 'OCR', false, _runOcr),
             _toolButton(Icons.palette, 'Color', false, _pickColor),
           ],
         ),
@@ -462,6 +482,87 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       _draftPoints = [];
       _dragStart = null;
     });
+  }
+
+  Future<void> _runOcr() async {
+    if (_page == null) return;
+    setState(() => _loading = true);
+    try {
+      // Save current page as temporary image for OCR
+      final tempDir = await Directory.systemTemp.createTemp('ocr_');
+      final tempFile = File('${tempDir.path}/page.png');
+      await tempFile.writeAsBytes(_page!.bytes);
+
+      final ocr = OcrService();
+      try {
+        final result = await ocr.extractStructured(tempFile.path);
+        if (result.lines.isEmpty) {
+          _snack('No text recognized on this page');
+          return;
+        }
+
+        // Calculate scale factor from OCR image to normalized coordinates
+        final scaleX = 1.0 / result.imageWidth;
+        final scaleY = 1.0 / result.imageHeight;
+
+        setState(() {
+          for (final line in result.lines) {
+            if (line.text.trim().isEmpty) continue;
+            final box = line.box;
+            _overlays.add(PdfOverlay(
+              type: PdfOverlayType.ocrText,
+              pageIndex: _pageIndex,
+              rect: Rect.fromLTWH(
+                box.left * scaleX,
+                box.top * scaleY,
+                box.width * scaleX,
+                box.height * scaleY,
+              ),
+              text: line.text.trim(),
+              fontSize: 12,
+            ));
+          }
+          _selected = null;
+        });
+        _snack('Added ${result.lines.length} text blocks. Tap to edit.');
+      } finally {
+        ocr.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    } catch (e) {
+      _snack('OCR failed: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _editOcrText(PdfOverlay o) async {
+    final controller = TextEditingController(text: o.text);
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit OCR Text'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: null,
+          decoration: const InputDecoration(hintText: 'Correct the text...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (text != null && text.isNotEmpty) {
+      setState(() => o.text = text);
+    }
   }
 
   Future<void> _addText() async {
