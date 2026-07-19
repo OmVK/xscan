@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -89,18 +90,15 @@ class PdfToolsService {
       throw PdfToolException('No PDF files selected to merge.');
     }
 
-    final output = PdfDocument();
-    output.pageSettings.margins.all = 0;
-
+    // File I/O must stay on main isolate — read all bytes first.
+    final fileBytesList = <Uint8List>[];
     for (final path in paths) {
       final file = File(path);
       if (!file.existsSync()) {
         throw PdfToolException('File not found: ${path.split('/').last}');
       }
       try {
-        final source = PdfDocument(inputBytes: file.readAsBytesSync());
-        _copyPages(source, output, List.generate(source.pages.count, (i) => i));
-        source.dispose();
+        fileBytesList.add(await file.readAsBytes());
       } catch (e) {
         throw PdfToolException(
           'Failed to read ${path.split('/').last}. The file may be corrupted or password-protected.',
@@ -109,9 +107,22 @@ class PdfToolsService {
       }
     }
 
-    final bytes = await output.save();
-    output.dispose();
-    return AppStorage.writePdf(title, bytes);
+    // Heavy PDF merging on background isolate.
+    final result = await Isolate.run(() {
+      final output = PdfDocument();
+      output.pageSettings.margins.all = 0;
+      for (final bytes in fileBytesList) {
+        final source = PdfDocument(inputBytes: bytes);
+        _copyPagesStatic(source, output, List.generate(source.pages.count, (i) => i));
+        source.dispose();
+      }
+      final merged = output.saveSync();
+      output.dispose();
+      return merged;
+    });
+
+    // Write file on main isolate (platform channel access).
+    return AppStorage.writePdf(title, result);
   }
 
   /// Produces a new PDF containing only [pageIndices] in the given order.
@@ -332,13 +343,19 @@ class PdfToolsService {
 
   /// Re-saves the PDF with maximum compression.
   Future<String> compress(String path, {String title = 'Compressed'}) async {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    doc.compressionLevel = PdfCompressionLevel.best;
-    doc.fileStructure.crossReferenceType =
-        PdfCrossReferenceType.crossReferenceStream;
-    final bytes = await doc.save();
-    doc.dispose();
-    return AppStorage.writePdf(title, bytes);
+    final inputBytes = await File(path).readAsBytes();
+
+    final result = await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes);
+      doc.compressionLevel = PdfCompressionLevel.best;
+      doc.fileStructure.crossReferenceType =
+          PdfCrossReferenceType.crossReferenceStream;
+      final bytes = doc.saveSync();
+      doc.dispose();
+      return bytes;
+    });
+
+    return AppStorage.writePdf(title, result);
   }
 
   /// Builds a PDF from a list of image files, one image per page.
@@ -739,16 +756,21 @@ class PdfToolsService {
 
   /// Builds a searchable PDF from images: each page shows the image with an
   /// invisible (transparency-0) OCR text layer positioned over the words.
+  ///
+  /// NOTE: OCR (`OcrService.extractStructured`) uses platform channels (ML Kit)
+  /// so it must remain on the main isolate. Only the final PDF save is
+  /// background-safe, so the bulk of the work stays here.
   Future<String> imagesToSearchablePdf(
     List<String> imagePaths, {
     String title = 'Searchable',
     void Function(int done, int total)? onProgress,
   }) async {
     final ocr = OcrService();
-    final doc = PdfDocument();
-    doc.pageSettings.margins.all = 0;
-
     try {
+      // Collect all image bytes and OCR results on the main isolate (platform
+      // channel requirement), then hand the raw data to a background isolate
+      // for the PDF generation step only.
+      final pageDataList = <({Uint8List imageBytes, double w, double h, List<({String text, double left, double top, double width, double height})> words})>[];
       for (var i = 0; i < imagePaths.length; i++) {
         final imgPath = imagePaths[i];
         final file = File(imgPath);
@@ -756,34 +778,57 @@ class PdfToolsService {
         final result = await ocr.extractStructured(imgPath);
         final pw = result.imageWidth.toDouble();
         final ph = result.imageHeight.toDouble();
-
-        doc.pageSettings.size = Size(pw, ph);
-        final page = doc.pages.add();
-        page.graphics.drawImage(
-          PdfBitmap(file.readAsBytesSync()),
-          Rect.fromLTWH(0, 0, pw, ph),
-        );
-
-        final g = page.graphics;
+        final words = <({String text, double left, double top, double width, double height})>[];
         for (final line in result.lines) {
           final box = line.box;
           if (box.height <= 0) continue;
-          g.save();
-          g.setTransparency(0);
-          g.drawString(
-            line.text,
-            PdfStandardFont(PdfFontFamily.helvetica, box.height * 0.8),
-            brush: PdfSolidBrush(PdfColor(0, 0, 0)),
-            bounds: Rect.fromLTWH(box.left, box.top, box.width, box.height),
-          );
-          g.restore();
+          words.add((
+            text: line.text,
+            left: box.left,
+            top: box.top,
+            width: box.width,
+            height: box.height,
+          ));
         }
+        pageDataList.add((
+          imageBytes: await file.readAsBytes(),
+          w: pw,
+          h: ph,
+          words: words,
+        ));
         onProgress?.call(i + 1, imagePaths.length);
       }
 
-      final bytes = await doc.save();
-      doc.dispose();
-      return AppStorage.writePdf(title, bytes);
+      // PDF generation on background isolate (no platform channels needed).
+      final result = await Isolate.run(() {
+        final doc = PdfDocument();
+        doc.pageSettings.margins.all = 0;
+        for (final pageData in pageDataList) {
+          doc.pageSettings.size = Size(pageData.w, pageData.h);
+          final page = doc.pages.add();
+          page.graphics.drawImage(
+            PdfBitmap(pageData.imageBytes),
+            Rect.fromLTWH(0, 0, pageData.w, pageData.h),
+          );
+          final g = page.graphics;
+          for (final word in pageData.words) {
+            g.save();
+            g.setTransparency(0);
+            g.drawString(
+              word.text,
+              PdfStandardFont(PdfFontFamily.helvetica, word.height * 0.8),
+              brush: PdfSolidBrush(PdfColor(0, 0, 0)),
+              bounds: Rect.fromLTWH(word.left, word.top, word.width, word.height),
+            );
+            g.restore();
+          }
+        }
+        final bytes = doc.saveSync();
+        doc.dispose();
+        return bytes;
+      });
+
+      return AppStorage.writePdf(title, result);
     } finally {
       ocr.dispose();
     }
@@ -813,6 +858,19 @@ class PdfToolsService {
   }
 
   void _copyPages(PdfDocument source, PdfDocument output, List<int> indices) {
+    for (final index in indices) {
+      if (index < 0 || index >= source.pages.count) continue;
+      final srcPage = source.pages[index];
+      final template = srcPage.createTemplate();
+      output.pageSettings.size = srcPage.size;
+      final page = output.pages.add();
+      page.graphics.drawPdfTemplate(template, Offset.zero, srcPage.size);
+    }
+  }
+
+  /// Static variant of [_copyPages] usable inside isolates.
+  static void _copyPagesStatic(
+      PdfDocument source, PdfDocument output, List<int> indices) {
     for (final index in indices) {
       if (index < 0 || index >= source.pages.count) continue;
       final srcPage = source.pages[index];

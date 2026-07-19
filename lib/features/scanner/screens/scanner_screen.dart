@@ -1,5 +1,6 @@
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -69,36 +70,52 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.close,
-                            color: Colors.white, size: 28),
-                        onPressed: () => Navigator.pop(context),
+                      Semantics(
+                        label: 'Close scanner',
+                        button: true,
+                        child: IconButton(
+                          icon: const Icon(Icons.close,
+                              color: Colors.white, size: 28),
+                          onPressed: () => Navigator.pop(context),
+                        ),
                       ),
                       if (_isBarcode)
                         Row(
                           children: [
-                            IconButton(
-                              tooltip: 'Scan from gallery',
-                              icon: const Icon(Icons.photo_library_outlined,
-                                  color: Colors.white),
-                              onPressed: _scanFromGallery,
-                            ),
-                            IconButton(
-                              tooltip: 'Flashlight',
-                              icon: Icon(
-                                _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                                color: Colors.white,
+                            Semantics(
+                              label: 'Scan from gallery',
+                              button: true,
+                              child: IconButton(
+                                tooltip: 'Scan from gallery',
+                                icon: const Icon(Icons.photo_library_outlined,
+                                    color: Colors.white),
+                                onPressed: _scanFromGallery,
                               ),
-                              onPressed: () {
-                                cameraController.toggleTorch();
-                                setState(() => _isFlashOn = !_isFlashOn);
-                              },
                             ),
-                            IconButton(
-                              tooltip: 'Switch camera',
-                              icon: const Icon(Icons.cameraswitch,
-                                  color: Colors.white),
-                              onPressed: () => cameraController.switchCamera(),
+                            Semantics(
+                              label: _isFlashOn ? 'Flashlight on' : 'Flashlight off',
+                              button: true,
+                              child: IconButton(
+                                tooltip: 'Flashlight',
+                                icon: Icon(
+                                  _isFlashOn ? Icons.flash_on : Icons.flash_off,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  cameraController.toggleTorch();
+                                  setState(() => _isFlashOn = !_isFlashOn);
+                                },
+                              ),
+                            ),
+                            Semantics(
+                              label: 'Switch camera',
+                              button: true,
+                              child: IconButton(
+                                tooltip: 'Switch camera',
+                                icon: const Icon(Icons.cameraswitch,
+                                    color: Colors.white),
+                                onPressed: () => cameraController.switchCamera(),
+                              ),
                             ),
                           ],
                         ),
@@ -126,17 +143,21 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           ),
 
           if (_isProcessing)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('Processing...',
-                        style: TextStyle(color: Colors.white)),
-                  ],
+            Semantics(
+              label: 'Processing',
+              liveRegion: true,
+              child: Container(
+                color: Colors.black54,
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Processing...',
+                          style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -247,8 +268,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     if (!mounted) return;
     final barcodes = capture?.barcodes ?? [];
     if (barcodes.isEmpty) {
+      final msg = 'No barcode found in image';
+      SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No barcode found in image')),
+        SnackBar(content: Text(msg)),
       );
       return;
     }
@@ -329,8 +352,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       _batch.clear();
       _seen.clear();
     });
+    final msg = 'Saved $count barcodes';
+    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved $count barcodes')),
+      SnackBar(content: Text(msg)),
     );
   }
 
@@ -366,14 +391,18 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
             ),
             const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: _isProcessing ? null : _launchDocumentScanner,
-              style: FilledButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            Semantics(
+              label: 'Open scanner',
+              button: true,
+              child: FilledButton.icon(
+                onPressed: _isProcessing ? null : _launchDocumentScanner,
+                style: FilledButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                ),
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Open Scanner'),
               ),
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Open Scanner'),
             ),
           ],
         ),
@@ -383,25 +412,30 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   Widget _buildModeSelector(String title, ScanMode mode) {
     final isSelected = _mode == mode;
-    return GestureDetector(
-      onTap: () {
-        if (_mode == mode) return;
-        setState(() => _mode = mode);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    return Semantics(
+      label: 'Scan mode: $title',
+      selected: isSelected,
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          if (_mode == mode) return;
+          setState(() => _mode = mode);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.grey,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
         ),
       ),
@@ -417,8 +451,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      final msg = 'Scanner error: $e';
+      SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Scanner error: $e')),
+        SnackBar(content: Text(msg)),
       );
       return;
     }
@@ -460,17 +496,21 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       HapticFeedback.heavyImpact();
       setState(() => _isProcessing = false);
 
+      final msg = 'Saved ${persistedPaths.length} page(s) to $category';
+      SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Saved ${persistedPaths.length} page(s) to $category'),
+          content: Text(msg),
         ),
       );
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
+      final msg = 'Failed to save scan: $e';
+      SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save scan: $e')),
+        SnackBar(content: Text(msg)),
       );
     }
   }
@@ -537,6 +577,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               child: OutlinedButton.icon(
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: value));
+                  SemanticsService.sendAnnouncement(View.of(context), 'Copied to clipboard', TextDirection.ltr);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Copied to clipboard')),
                   );
@@ -619,10 +660,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       await isarService.saveDocument(newDoc);
       if (!mounted) return;
 
+      const msg = 'Saved to Barcodes!';
+      SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved to Barcodes!')),
+        SnackBar(content: Text(msg)),
       );
-      Navigator.pop(context);
+      return;
     }
   }
 

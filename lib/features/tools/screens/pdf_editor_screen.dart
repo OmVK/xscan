@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:signature/signature.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
@@ -86,6 +87,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       _overlays.where((o) => o.pageIndex == _pageIndex).toList();
 
   void _snack(String msg) {
+    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -96,15 +98,19 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         title: Text(widget.title),
         actions: [
           if (_selected != null)
-            IconButton(
-              tooltip: 'Delete element',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () {
-                setState(() {
-                  _overlays.remove(_selected);
-                  _selected = null;
-                });
-              },
+            Semantics(
+              label: 'Delete selected element',
+              button: true,
+              child: IconButton(
+                tooltip: 'Delete element',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () {
+                  setState(() {
+                    _overlays.remove(_selected);
+                    _selected = null;
+                  });
+                },
+              ),
             ),
           IconButton(
             tooltip: 'Save',
@@ -181,29 +187,37 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 });
               },
               onPanEnd: _mode == _EditMode.move ? null : (_) => _commitDraft(),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Image.memory(_page!.bytes, fit: BoxFit.fill),
-                  ),
-                  ..._pageOverlays.map((o) => _buildOverlayWidget(o, size)),
-                  if (_draftRect != null)
-                    Positioned(
-                      left: _draftRect!.left * w,
-                      top: _draftRect!.top * h,
-                      width: _draftRect!.width.abs() * w,
-                      height: _draftRect!.height.abs() * h,
-                      child: Container(
-                        color: _color.withValues(alpha: 0.35),
-                      ),
-                    ),
-                  if (_draftPoints.length > 1)
+              child: RepaintBoundary(
+                child: Stack(
+                  children: [
                     Positioned.fill(
-                      child: CustomPaint(
-                        painter: _InkPainter(_draftPoints, _inkColor, size),
-                      ),
+                      child: Image.memory(_page!.bytes, fit: BoxFit.fill),
                     ),
-                ],
+                    ..._pageOverlays.map((o) => RepaintBoundary(
+                          child: _buildOverlayWidget(o, size),
+                        )),
+                    if (_draftRect != null)
+                      RepaintBoundary(
+                        child: Positioned(
+                          left: _draftRect!.left * w,
+                          top: _draftRect!.top * h,
+                          width: _draftRect!.width.abs() * w,
+                          height: _draftRect!.height.abs() * h,
+                          child: Container(
+                            color: _color.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ),
+                    if (_draftPoints.length > 1)
+                      RepaintBoundary(
+                        child: Positioned.fill(
+                          child: CustomPaint(
+                            painter: _InkPainter(_draftPoints, _inkColor, size),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -341,24 +355,27 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   }
 
   Widget _buildPager() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            onPressed:
-                _pageIndex > 0 ? () => _loadPage(_pageIndex - 1) : null,
-          ),
-          Text('Page ${_pageIndex + 1} / $_pageCount'),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            onPressed: _pageIndex < _pageCount - 1
-                ? () => _loadPage(_pageIndex + 1)
-                : null,
-          ),
-        ],
+    return Semantics(
+      label: 'Page ${_pageIndex + 1} of $_pageCount',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              onPressed:
+                  _pageIndex > 0 ? () => _loadPage(_pageIndex - 1) : null,
+            ),
+            Text('Page ${_pageIndex + 1} / $_pageCount'),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              onPressed: _pageIndex < _pageCount - 1
+                  ? () => _loadPage(_pageIndex + 1)
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -366,7 +383,10 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   Widget _buildSizeControl() {
     final o = _selected!;
     final currentWidth = (o.rect.width * 100).round();
-    return Container(
+    return Semantics(
+      label: 'Overlay size',
+      value: '$currentWidth%',
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -436,6 +456,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -485,18 +506,23 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final color = active
         ? Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(height: 2),
-            Text(label, style: TextStyle(color: color, fontSize: 11)),
-          ],
+    return Semantics(
+      label: '$label tool',
+      button: true,
+      selected: active,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(height: 2),
+              Text(label, style: TextStyle(color: color, fontSize: 11)),
+            ],
+          ),
         ),
       ),
     );

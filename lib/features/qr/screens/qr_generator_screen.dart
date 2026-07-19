@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -411,8 +412,10 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     if (bytes == null || !mounted) return;
     final path = await AppStorage.writeExport('qr_code.png', bytes);
     if (!mounted) return;
+    final msg = 'Saved: $path';
+    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Saved: $path')));
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _share() async {
@@ -498,7 +501,9 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     if (name == null || name.isEmpty || !mounted) return;
     await _savePreset(name);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" saved')));
+    final msg = 'Preset "$name" saved';
+    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _showPresetSheet() {
@@ -606,22 +611,28 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           const SizedBox(height: 8),
           _logoRow(),
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _generate,
-            icon: const Icon(Icons.qr_code),
-            label: const Text('Generate'),
+          Semantics(
+            label: 'Generate QR code',
+            button: true,
+            child: FilledButton.icon(
+              onPressed: _generate,
+              icon: const Icon(Icons.qr_code),
+              label: const Text('Generate'),
+            ),
           ),
           const SizedBox(height: 24),
           if (_data.isNotEmpty) ...[
             Center(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _bg,
-                  borderRadius: BorderRadius.circular(
-                      _design.roundedFrame ? 24 : 4),
-                ),
-                child: QrImageView(
+              child: Semantics(
+                label: 'QR code preview',
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _bg,
+                    borderRadius: BorderRadius.circular(
+                        _design.roundedFrame ? 24 : 4),
+                  ),
+                  child: QrImageView(
                   data: _data,
                   version: QrVersions.auto,
                   size: 240,
@@ -638,12 +649,14 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                       : const QrEmbeddedImageStyle(size: Size(52, 52)),
                 ),
               ),
+              ),
             ),
             const SizedBox(height: 8),
             Center(
               child: TextButton.icon(
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: _data));
+                  SemanticsService.sendAnnouncement(View.of(context), 'Content copied', TextDirection.ltr);
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Content copied')));
                 },
@@ -656,18 +669,26 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.download),
-                    label: const Text('Save'),
+                  child: Semantics(
+                    label: 'Save QR code',
+                    button: true,
+                    child: OutlinedButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.download),
+                      label: const Text('Save'),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _share,
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share'),
+                  child: Semantics(
+                    label: 'Share QR code',
+                    button: true,
+                    child: FilledButton.icon(
+                      onPressed: _share,
+                      icon: const Icon(Icons.share),
+                      label: const Text('Share'),
+                    ),
                   ),
                 ),
               ],

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -59,6 +60,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   StreamSubscription<List<IncomingFile>>? _shareSub;
   Timer? _searchDebounce;
   final Set<String> _fileExistsCache = {};
+
+  // Lazy loading state for document grid.
+  static const int _pageSize = 20;
+  int _visibleCount = 20;
+  String _lastCategory = 'All';
 
   @override
   void initState() {
@@ -167,83 +173,89 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ],
       ),
-      child: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ScannerScreen()),
-          );
-        },
-        shape: const CircleBorder(),
-        child: const Icon(Icons.document_scanner, size: 28),
+      child: Semantics(
+        label: 'Scan document',
+        button: true,
+        child: FloatingActionButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ScannerScreen()),
+            );
+          },
+          shape: const CircleBorder(),
+          child: const Icon(Icons.document_scanner, size: 28),
+        ),
       ),
     );
   }
 
   Widget _buildFloatingAppBar() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              height: 60,
-              decoration: BoxDecoration(
-                color: _glassFill,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _glassBorder),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _isSearching
-                        ? TextField(
-                            controller: _searchController,
-                            autofocus: true,
-                            style: TextStyle(color: _onGlass),
-                            decoration: InputDecoration(
-                              hintText: 'Search title or text...',
-                              hintStyle: TextStyle(color: _onGlassMuted),
-                              border: InputBorder.none,
+    return RepaintBoundary(
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                height: 60,
+                decoration: BoxDecoration(
+                  color: _glassFill,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _glassBorder),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _isSearching
+                          ? TextField(
+                              controller: _searchController,
+                              autofocus: true,
+                              style: TextStyle(color: _onGlass),
+                              decoration: InputDecoration(
+                                hintText: 'Search title or text...',
+                                hintStyle: TextStyle(color: _onGlassMuted),
+                                border: InputBorder.none,
+                              ),
+                              onChanged: (value) {
+                                _searchDebounce?.cancel();
+                                _searchDebounce = Timer(
+                                  const Duration(milliseconds: 300),
+                                  () {
+                                    ref.read(searchQueryProvider.notifier).state = value;
+                                  },
+                                );
+                              },
+                            )
+                          : Text(
+                              'XScan',
+                              style: TextStyle(
+                                color: _onGlass,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
                             ),
-                            onChanged: (value) {
-                              _searchDebounce?.cancel();
-                              _searchDebounce = Timer(
-                                const Duration(milliseconds: 300),
-                                () {
-                                  ref.read(searchQueryProvider.notifier).state = value;
-                                },
-                              );
-                            },
-                          )
-                        : Text(
-                            'XScan',
-                            style: TextStyle(
-                              color: _onGlass,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                  ),
-                  IconButton(
-                    icon: Icon(_isSearching ? Icons.close : Icons.search, color: _onGlass),
-                    onPressed: () {
-                      setState(() {
-                        if (_isSearching) {
-                          _isSearching = false;
-                          _searchController.clear();
-                          ref.read(searchQueryProvider.notifier).state = '';
-                        } else {
-                          _isSearching = true;
-                        }
-                      });
-                    },
-                  ),
-                ],
+                    ),
+                    IconButton(
+                      icon: Icon(_isSearching ? Icons.close : Icons.search, color: _onGlass),
+                      onPressed: () {
+                        setState(() {
+                          if (_isSearching) {
+                            _isSearching = false;
+                            _searchController.clear();
+                            ref.read(searchQueryProvider.notifier).state = '';
+                          } else {
+                            _isSearching = true;
+                          }
+                        });
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -253,29 +265,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildGlassBottomNav() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(30),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            height: 70,
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? Colors.black.withValues(alpha: 0.4)
-                  : Colors.white.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: _glassBorder),
-            ),
-            child: Row(
-              children: [
-                Expanded(child: _buildNavItem(0, Icons.home_outlined, Icons.home, 'Home')),
-                Expanded(child: _buildNavItem(1, Icons.folder_outlined, Icons.folder, 'Files')),
-                const SizedBox(width: 50), // Space for FAB
-                Expanded(child: _buildNavItem(2, Icons.grid_view, Icons.grid_view_rounded, 'Tools')),
-                Expanded(child: _buildNavItem(3, Icons.settings_outlined, Icons.settings, 'Settings')),
-              ],
+    return RepaintBoundary(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              height: 70,
+              decoration: BoxDecoration(
+                color: _isDark
+                    ? Colors.black.withValues(alpha: 0.4)
+                    : Colors.white.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: _glassBorder),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: _buildNavItem(0, Icons.home_outlined, Icons.home, 'Home')),
+                  Expanded(child: _buildNavItem(1, Icons.folder_outlined, Icons.folder, 'Files')),
+                  const SizedBox(width: 50), // Space for FAB
+                  Expanded(child: _buildNavItem(2, Icons.grid_view, Icons.grid_view_rounded, 'Tools')),
+                  Expanded(child: _buildNavItem(3, Icons.settings_outlined, Icons.settings, 'Settings')),
+                ],
+              ),
             ),
           ),
         ),
@@ -286,35 +300,40 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildNavItem(int index, IconData icon, IconData activeIcon, String label) {
     final isSelected = _currentIndex == index;
     final color = isSelected ? Theme.of(context).colorScheme.secondary : _onGlassMuted;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (index == 3) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const SettingsScreen()),
-          );
-          return;
-        }
-        setState(() {
-          _currentIndex = index;
-        });
-      },
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(isSelected ? activeIcon : icon, color: color, size: 26),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    return Semantics(
+      label: '$label tab',
+      selected: isSelected,
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (index == 3) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            );
+            return;
+          }
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(isSelected ? activeIcon : icon, color: color, size: 26),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -334,6 +353,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildHomeView() {
     final docsAsyncValue = ref.watch(filteredDocumentsProvider);
     final selectedCategory = ref.watch(categoryFilterProvider);
+    // Reset pagination when category filter changes.
+    if (selectedCategory != _lastCategory) {
+      _lastCategory = selectedCategory;
+      _visibleCount = _pageSize;
+    }
 
     return Column(
       children: [
@@ -391,121 +415,164 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
               _rebuildFileCache(filteredDocs);
 
-              return MasonryGridView.count(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 120), // Bottom padding for nav bar
-                crossAxisCount: 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                itemCount: filteredDocs.length,
-                itemBuilder: (context, index) {
-                  final doc = filteredDocs[index];
-                  final double randomHeight = (index % 3 == 0) ? 220 : 180;
-                  final hasImage = doc.filePath.isNotEmpty && _fileExists(doc.filePath);
+              final visibleDocs = filteredDocs
+                  .take(_visibleCount.clamp(0, filteredDocs.length))
+                  .toList();
 
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => DocumentDetailScreen(document: doc),
-                        ),
-                      );
-                    },
-                    child: Hero(
-                      tag: doc.id.toString(),
-                      child: Container(
-                        height: hasImage ? null : randomHeight, // null lets image dictate height
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          gradient: hasImage ? null : const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF2B2B36),
-                              Color(0xFF1E1E26),
-                            ],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 5),
-                            )
-                          ],
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Stack(
-                          fit: StackFit.passthrough,
-                          children: [
-                            if (hasImage)
-                              Image.file(
-                                File(doc.filePath),
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                              )
-                            else
-                              Center(
-                                child: Icon(
-                                  doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
-                                  size: 60,
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                ),
+              return NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollEndNotification &&
+                      notification.metrics.pixels >=
+                          notification.metrics.maxScrollExtent - 200) {
+                    if (_visibleCount < filteredDocs.length) {
+                      setState(() {
+                        _visibleCount =
+                            (_visibleCount + _pageSize).clamp(0, filteredDocs.length);
+                      });
+                    }
+                  }
+                  return false;
+                },
+                child: MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: visibleDocs.length,
+                  itemBuilder: (context, index) {
+                    final doc = visibleDocs[index];
+                    final double randomHeight = (index % 3 == 0) ? 220 : 180;
+                    final hasImage = doc.filePath.isNotEmpty && _fileExists(doc.filePath);
+
+                    return RepaintBoundary(
+                      child: Semantics(
+                        label: 'Document: ${doc.title}',
+                        button: true,
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DocumentDetailScreen(document: doc),
                               ),
-                              
-                            // Glassmorphism title overlay at the bottom
-                            Positioned(
-                              bottom: 0, left: 0, right: 0,
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.only(
-                                  bottomLeft: Radius.circular(20),
-                                  bottomRight: Radius.circular(20),
-                                ),
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.6),
-                                      border: Border(
-                                        top: BorderSide(
-                                          color: Colors.white.withValues(alpha: 0.1),
+                            );
+                          },
+                          child: Hero(
+                          tag: doc.id.toString(),
+                          child: Container(
+                            height: hasImage ? null : randomHeight,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              gradient: hasImage ? null : const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Color(0xFF2B2B36),
+                                  Color(0xFF1E1E26),
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
+                                )
+                              ],
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(
+                              fit: StackFit.passthrough,
+                              children: [
+                                if (hasImage)
+                                  Image.file(
+                                    File(doc.filePath),
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                    cacheWidth: 400,
+                                    cacheHeight: 400,
+                                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                                      if (wasSynchronouslyLoaded || frame != null) return child;
+                                      return AnimatedOpacity(
+                                        opacity: frame == null ? 0 : 1,
+                                        duration: const Duration(milliseconds: 300),
+                                        curve: Curves.easeOut,
+                                        child: child,
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) => Center(
+                                      child: Icon(
+                                        doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
+                                        size: 60,
+                                        color: Colors.white.withValues(alpha: 0.2),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Center(
+                                    child: Icon(
+                                      doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
+                                      size: 60,
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  
+                                // Glassmorphism title overlay at the bottom
+                                Positioned(
+                                  bottom: 0, left: 0, right: 0,
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.only(
+                                      bottomLeft: Radius.circular(20),
+                                      bottomRight: Radius.circular(20),
+                                    ),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.6),
+                                          border: Border(
+                                            top: BorderSide(
+                                              color: Colors.white.withValues(alpha: 0.1),
+                                            ),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              doc.title,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              doc.category,
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.secondary,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          doc.title,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          doc.category,
-                                          style: TextStyle(
-                                            color: Theme.of(context).colorScheme.secondary,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
                                   ),
-                                ),
-                              ),
-                            )
-                          ],
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -672,8 +739,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     if (!confirm) return;
     await ref.read(isarServiceProvider).emptyTrash();
     if (!mounted) return;
+    const msg = 'Trash emptied';
+    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Trash emptied')));
+        .showSnackBar(const SnackBar(content: Text(msg)));
   }
 
   Widget _buildGroupedList(List<ScanDocument> docs) {
@@ -785,8 +854,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ..category = 'Documents';
     await ref.read(isarServiceProvider).saveDocument(doc);
     if (!mounted) return;
+    const msg = 'Saved edited image to library';
+    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Saved edited image to library')),
+      const SnackBar(content: Text(msg)),
     );
   }
 
@@ -1055,9 +1126,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           crossAxisSpacing: 16,
           childAspectRatio: 1.15,
           children: tools.map((tool) {
-            return GestureDetector(
-              onTap: tool.$4,
-              child: Container(
+            return Semantics(
+              label: 'Tool: ${tool.$2}. ${tool.$3}',
+              button: true,
+              child: GestureDetector(
+                onTap: tool.$4,
+                child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
@@ -1095,6 +1169,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ),
                   ],
                 ),
+              ),
               ),
             );
           }).toList(),
