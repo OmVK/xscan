@@ -122,6 +122,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       body: Column(
         children: [
           Expanded(child: _buildCanvas()),
+          if (_selected != null && _selected!.type != PdfOverlayType.ink)
+            _buildSizeControl(),
           _buildPager(),
           _buildToolbar(),
         ],
@@ -355,6 +357,82 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             onPressed: _pageIndex < _pageCount - 1
                 ? () => _loadPage(_pageIndex + 1)
                 : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSizeControl() {
+    final o = _selected!;
+    final currentWidth = (o.rect.width * 100).round();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.aspect_ratio, size: 18),
+              const SizedBox(width: 8),
+              const Text('Size', style: TextStyle(fontSize: 13)),
+              const Spacer(),
+              SizedBox(
+                width: 60,
+                height: 32,
+                child: TextField(
+                  controller: TextEditingController(text: '$currentWidth'),
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(
+                    contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    suffixText: '%',
+                  ),
+                  onSubmitted: (v) {
+                    final pct = int.tryParse(v);
+                    if (pct == null || pct < 5 || pct > 300) return;
+                    setState(() {
+                      final factor = pct / 100;
+                      final newW = factor.clamp(0.05, 0.95);
+                      final newH = (o.rect.height / o.rect.width * newW).clamp(0.05, 0.95);
+                      o.rect = Rect.fromLTWH(
+                        o.rect.left + (o.rect.width - newW) / 2,
+                        o.rect.top + (o.rect.height - newH) / 2,
+                        newW,
+                        newH,
+                      );
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: currentWidth.toDouble().clamp(5, 300),
+            min: 5,
+            max: 150,
+            onChanged: (v) {
+              setState(() {
+                final factor = v / 100;
+                final newW = factor.clamp(0.05, 0.95);
+                final newH = (o.rect.height / o.rect.width * newW).clamp(0.05, 0.95);
+                o.rect = Rect.fromLTWH(
+                  o.rect.left + (o.rect.width - newW) / 2,
+                  o.rect.top + (o.rect.height - newH) / 2,
+                  newW,
+                  newH,
+                );
+              });
+            },
           ),
         ],
       ),
