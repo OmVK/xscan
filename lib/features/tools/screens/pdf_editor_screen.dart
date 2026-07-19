@@ -9,7 +9,7 @@ import 'package:xscan/core/services/pdf_render_service.dart';
 import 'package:xscan/core/services/pdf_tools_service.dart';
 import 'package:xscan/features/tools/services/tool_io.dart';
 
-enum _EditMode { move, highlight, draw }
+enum _EditMode { move, highlight, draw, redact }
 
 class PdfEditorScreen extends StatefulWidget {
   final String pdfPath;
@@ -46,6 +46,10 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   Offset? _dragStart;
   Rect? _draftRect;
   List<Offset> _draftPoints = [];
+
+  // Scale gesture state for pinch-to-resize overlays.
+  double _scaleStart = 1.0;
+  Rect? _scaleStartRect;
 
   @override
   void initState() {
@@ -248,6 +252,9 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           ),
         );
         break;
+      case PdfOverlayType.redact:
+        content = Container(color: o.color);
+        break;
     }
 
     final movable = o.type != PdfOverlayType.ink;
@@ -268,6 +275,37 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                   final dy = d.delta.dy / size.height;
                   o.rect = o.rect.translate(dx, dy);
                 });
+              },
+        onScaleStart: !movable
+            ? null
+            : (details) {
+                _selected = o;
+                _scaleStart = 1.0;
+                _scaleStartRect = o.rect;
+              },
+        onScaleUpdate: !movable
+            ? null
+            : (details) {
+                setState(() {
+                  _selected = o;
+                  if (_scaleStartRect == null) return;
+                  final newScale = details.scale;
+                  final factor = newScale / _scaleStart;
+                  final r = _scaleStartRect!;
+                  final newW = (r.width * factor).clamp(0.05, 0.95);
+                  final newH = (r.height * factor).clamp(0.05, 0.95);
+                  o.rect = Rect.fromLTWH(
+                    r.left + (r.width - newW) / 2,
+                    r.top + (r.height - newH) / 2,
+                    newW,
+                    newH,
+                  );
+                });
+              },
+        onScaleEnd: !movable
+            ? null
+            : (_) {
+                _scaleStartRect = null;
               },
         child: Container(
           decoration: BoxDecoration(
@@ -331,6 +369,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             _toolButton(Icons.gesture, 'Draw', _mode == _EditMode.draw, () {
               setState(() => _mode =
                   _mode == _EditMode.draw ? _EditMode.move : _EditMode.draw);
+            }),
+            _toolButton(Icons.security, 'Redact', _mode == _EditMode.redact, () {
+              setState(() => _mode = _mode == _EditMode.redact
+                  ? _EditMode.move
+                  : _EditMode.redact);
             }),
             _toolButton(Icons.palette, 'Color', false, _pickColor),
           ],
@@ -398,6 +441,21 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         color: _inkColor,
         strokeWidth: 3,
       ));
+    } else if (_mode == _EditMode.redact && _draftRect != null) {
+      final r = Rect.fromLTWH(
+        _draftRect!.left,
+        _draftRect!.top,
+        _draftRect!.width.abs(),
+        _draftRect!.height.abs(),
+      );
+      if (r.width > 0.01 && r.height > 0.01) {
+        _overlays.add(PdfOverlay(
+          type: PdfOverlayType.redact,
+          pageIndex: _pageIndex,
+          rect: r,
+          color: Colors.black,
+        ));
+      }
     }
     setState(() {
       _draftRect = null;

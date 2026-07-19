@@ -9,7 +9,12 @@ import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 
 /// Kinds of overlay a user can flatten onto a PDF page in the editor.
-enum PdfOverlayType { text, image, highlight, ink, underline }
+enum PdfOverlayType { text, image, highlight, ink, underline, redact }
+
+enum PageNumberPosition {
+  topLeft, topCenter, topRight,
+  bottomLeft, bottomCenter, bottomRight,
+}
 
 /// Supported interactive form field types.
 enum PdfFormFieldType { text, checkbox }
@@ -23,6 +28,13 @@ class PdfToolException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class BookmarkInfo {
+  BookmarkInfo({required this.title, required this.pageIndex});
+
+  final String title;
+  final int pageIndex;
 }
 
 /// Lightweight description of a PDF form field for the fill-forms UI.
@@ -439,9 +451,115 @@ class PdfToolsService {
             Offset((overlay.rect.left + overlay.rect.width) * size.width, y),
           );
           break;
+        case PdfOverlayType.redact:
+          g.drawRectangle(
+            brush: PdfSolidBrush(_toPdfColor(overlay.color)),
+            bounds: Rect.fromLTWH(
+              overlay.rect.left * size.width,
+              overlay.rect.top * size.height,
+              overlay.rect.width * size.width,
+              overlay.rect.height * size.height,
+            ),
+          );
+          break;
       }
     }
 
+    final bytes = await doc.save();
+    doc.dispose();
+    return AppStorage.writePdf(title, bytes);
+  }
+
+  Future<String> addPageNumbers(
+    String path, {
+    List<int>? pageIndices,
+    PageNumberPosition position = PageNumberPosition.bottomCenter,
+    String format = 'Page {X}',
+    double fontSize = 10,
+    Color color = Colors.black,
+    String title = 'Numbered',
+  }) async {
+    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    final total = doc.pages.count;
+    final indices = pageIndices ?? List.generate(total, (i) => i);
+    final font = PdfStandardFont(PdfFontFamily.helvetica, fontSize);
+
+    for (final idx in indices) {
+      if (idx < 0 || idx >= total) continue;
+      final page = doc.pages[idx];
+      final size = page.getClientSize();
+      final g = page.graphics;
+      final display = format
+          .replaceAll('{X}', '${idx + 1}')
+          .replaceAll('{Y}', '$total');
+      final measured = font.measureString(display);
+      double x, y;
+      switch (position) {
+        case PageNumberPosition.topLeft:
+          x = 20; y = 10;
+        case PageNumberPosition.topCenter:
+          x = (size.width - measured.width) / 2; y = 10;
+        case PageNumberPosition.topRight:
+          x = size.width - measured.width - 20; y = 10;
+        case PageNumberPosition.bottomLeft:
+          x = 20; y = size.height - measured.height - 10;
+        case PageNumberPosition.bottomCenter:
+          x = (size.width - measured.width) / 2;
+          y = size.height - measured.height - 10;
+        case PageNumberPosition.bottomRight:
+          x = size.width - measured.width - 20;
+          y = size.height - measured.height - 10;
+      }
+      g.drawString(
+        display,
+        font,
+        brush: PdfSolidBrush(_toPdfColor(color)),
+        bounds: Rect.fromLTWH(x, y, measured.width, measured.height),
+      );
+    }
+    final bytes = await doc.save();
+    doc.dispose();
+    return AppStorage.writePdf(title, bytes);
+  }
+
+  Future<String> applyWatermarkTemplate(
+    String path,
+    String text, {
+    List<int>? pageIndices,
+    double opacity = 0.25,
+    double angle = -45,
+    double? fontSize,
+    Color color = Colors.red,
+    String title = 'Watermarked',
+  }) async {
+    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    final total = doc.pages.count;
+    final indices = pageIndices ?? List.generate(total, (i) => i);
+
+    for (final idx in indices) {
+      if (idx < 0 || idx >= total) continue;
+      final page = doc.pages[idx];
+      final size = page.getClientSize();
+      final fs = fontSize ??
+          (size.width / (text.length.clamp(4, 40)) * 1.6).clamp(20.0, 90.0);
+      final font = PdfStandardFont(PdfFontFamily.helvetica, fs,
+          style: PdfFontStyle.bold);
+      final g = page.graphics;
+      g.save();
+      g.setTransparency(opacity.clamp(0.0, 1.0));
+      g.translateTransform(size.width / 2, size.height / 2);
+      g.rotateTransform(angle);
+      final textSize = font.measureString(text);
+      g.drawString(
+        text,
+        font,
+        brush: PdfSolidBrush(_toPdfColor(color)),
+        bounds: Rect.fromLTWH(
+            -textSize.width / 2, -textSize.height / 2,
+            textSize.width, textSize.height),
+      );
+      g.restore();
+    }
     final bytes = await doc.save();
     doc.dispose();
     return AppStorage.writePdf(title, bytes);
@@ -586,6 +704,22 @@ class PdfToolsService {
     return text;
   }
 
+  String extractPageText(String path, int pageIndex, {String? password}) {
+    final doc = PdfDocument(
+      inputBytes: File(path).readAsBytesSync(),
+      password: password,
+    );
+    try {
+      final extractor = PdfTextExtractor(doc);
+      final text = extractor.extractText();
+      doc.dispose();
+      return text;
+    } catch (_) {
+      doc.dispose();
+      return '';
+    }
+  }
+
   /// Builds a searchable PDF from images: each page shows the image with an
   /// invisible (transparency-0) OCR text layer positioned over the words.
   Future<String> imagesToSearchablePdf(
@@ -685,6 +819,66 @@ class PdfToolsService {
         (c.g * 255).round(),
         (c.b * 255).round(),
       );
+
+  /// Reads the bookmarks from a PDF file.
+  List<BookmarkInfo> readBookmarks(String path) {
+    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    final result = <BookmarkInfo>[];
+    try {
+      _collectBookmarks(doc.bookmarks, result, doc);
+    } catch (_) {
+    } finally {
+      doc.dispose();
+    }
+    return result;
+  }
+
+  void _collectBookmarks(
+      PdfBookmarkBase bookmarks, List<BookmarkInfo> result, PdfDocument doc) {
+    for (var i = 0; i < bookmarks.count; i++) {
+      final bm = bookmarks[i];
+      try {
+        final dest = bm.destination;
+        if (dest != null) {
+          final targetPage = dest.page;
+          var pageIndex = 0;
+          for (var j = 0; j < doc.pages.count; j++) {
+            if (identical(doc.pages[j], targetPage)) {
+              pageIndex = j;
+              break;
+            }
+          }
+          result.add(BookmarkInfo(
+            title: bm.title,
+            pageIndex: pageIndex,
+          ));
+        }
+      } catch (_) {}
+      _collectBookmarks(bm, result, doc);
+    }
+  }
+
+  /// Writes bookmarks to a PDF file, replacing all existing ones.
+  Future<String> writeBookmarks(
+    String path,
+    List<BookmarkInfo> bookmarks, {
+    String title = 'Bookmarked',
+  }) async {
+    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    try {
+      while (doc.bookmarks.count > 0) {
+        doc.bookmarks.removeAt(0);
+      }
+      for (final bm in bookmarks) {
+        final bookmark = doc.bookmarks.add(bm.title);
+        final clampedIndex = bm.pageIndex.clamp(0, doc.pages.count - 1);
+        bookmark.destination = PdfDestination(doc.pages[clampedIndex]);
+      }
+    } catch (_) {}
+    final bytes = await doc.save();
+    doc.dispose();
+    return AppStorage.writePdf(title, bytes);
+  }
 
   /// Renders a signature drawing into trimmed PNG bytes (helper for editor).
   static Future<Uint8List?> imageToPng(ui.Image image) async {

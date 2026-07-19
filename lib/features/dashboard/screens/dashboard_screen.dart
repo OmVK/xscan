@@ -26,7 +26,15 @@ import 'package:xscan/features/tools/screens/split_pdf_screen.dart';
 import 'package:xscan/features/tools/screens/fill_forms_screen.dart';
 import 'package:xscan/features/tools/screens/image_editor_screen.dart';
 import 'package:xscan/features/tools/screens/convert_format_screen.dart';
+import 'package:xscan/features/tools/screens/page_numbering_screen.dart';
+import 'package:xscan/features/tools/screens/watermark_templates_screen.dart';
+import 'package:xscan/features/tools/screens/redact_pdf_screen.dart';
+import 'package:xscan/features/tools/screens/bookmark_manager_screen.dart';
+import 'package:xscan/features/tools/screens/page_rotation_screen.dart';
 import 'package:xscan/features/qr/screens/qr_generator_screen.dart';
+import 'package:xscan/features/qr/screens/batch_qr_screen.dart';
+import 'package:xscan/features/qr/screens/qr_history_screen.dart';
+import 'package:xscan/features/qr/screens/pdf_to_qr_screen.dart';
 import 'package:xscan/features/tools/widgets/pdf_source_picker.dart';
 import 'package:xscan/core/providers/document_provider.dart';
 import 'package:xscan/core/services/print_service.dart';
@@ -831,6 +839,27 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const QrGeneratorScreen())),
       ),
+      (
+        Icons.qr_code_2,
+        'Batch QR',
+        'Generate from CSV',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const BatchQrScreen())),
+      ),
+      (
+        Icons.history,
+        'QR History',
+        'View past QR codes',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const QrHistoryScreen())),
+      ),
+      (
+        Icons.picture_as_pdf,
+        'QR from PDF',
+        'Extract text to QR',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PdfToQrScreen())),
+      ),
     ];
 
     final mediaTools = <(IconData, String, String, VoidCallback)>[
@@ -904,6 +933,41 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         'Stamp text on every page',
         () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const WatermarkScreen())),
+      ),
+      (
+        Icons.dynamic_feed,
+        'Watermark Templates',
+        'Pre-built stamp watermarks',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const WatermarkTemplatesScreen())),
+      ),
+      (
+        Icons.format_list_numbered,
+        'Page Numbers',
+        'Add page numbers',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PageNumberingScreen())),
+      ),
+      (
+        Icons.security,
+        'Redact PDF',
+        'Black out sensitive content',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const RedactPdfScreen())),
+      ),
+      (
+        Icons.bookmark,
+        'Bookmarks',
+        'Edit table of contents',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const BookmarkManagerScreen())),
+      ),
+      (
+        Icons.rotate_right,
+        'Rotate Pages',
+        'Per-page rotation',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PageRotationScreen())),
       ),
       (
         Icons.lock,

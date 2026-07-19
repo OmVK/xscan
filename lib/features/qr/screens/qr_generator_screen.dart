@@ -1,8 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
@@ -100,8 +103,16 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   String _data = '';
   int _designIndex = 0;
   Uint8List? _logoBytes;
+  bool _hidden = false;
+  List<Map<String, dynamic>> _presets = [];
 
   QrDesign get _design => _qrDesigns[_designIndex];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPresets();
+  }
 
   final _palette = const [
     Colors.black,
@@ -134,6 +145,14 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
         return [
           _field('ssid', 'Network name (SSID)'),
           _field('password', 'Password'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Hidden network', style: TextStyle(fontSize: 14)),
+            leading: Checkbox(
+              value: _hidden,
+              onChanged: (v) => setState(() => _hidden = v ?? false),
+            ),
+          ),
           _dropdownEnc(),
         ];
       case QrType.contact:
@@ -142,6 +161,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           _field('phone', 'Phone'),
           _field('email', 'Email'),
           _field('org', 'Organization'),
+          _field('website', 'Website', hint: 'https://example.com'),
         ];
       case QrType.email:
         return [
@@ -158,9 +178,10 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       case QrType.event:
         return [
           _field('title', 'Event title'),
+          _field('description', 'Description', lines: 2),
           _field('location', 'Location'),
-          _field('start', 'Start (YYYYMMDDTHHMMSS)'),
-          _field('end', 'End (YYYYMMDDTHHMMSS)'),
+          _dateTimeField('start', 'Start'),
+          _dateTimeField('end', 'End'),
         ];
       case QrType.crypto:
         return [
@@ -227,6 +248,45 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     );
   }
 
+  Widget _dateTimeField(String key, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: _ctrl(key),
+        readOnly: true,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'Tap to pick date & time',
+          border: const OutlineInputBorder(),
+          suffixIcon: const Icon(Icons.calendar_today),
+        ),
+        onTap: () => _pickDateTime(key),
+      ),
+    );
+  }
+
+  Future<void> _pickDateTime(String key) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (time == null) return;
+    final dt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final formatted = '${dt.year.toString().padLeft(4, '0')}'
+        '${dt.month.toString().padLeft(2, '0')}'
+        '${dt.day.toString().padLeft(2, '0')}T'
+        '${dt.hour.toString().padLeft(2, '0')}'
+        '${dt.minute.toString().padLeft(2, '0')}00';
+    _ctrl(key).text = formatted;
+  }
+
   /// Escapes special characters for WiFi QR format (RFC 7987).
   /// Escapes: \\, ;, , , : , "
   String _wifiEscape(String s) => s
@@ -244,10 +304,12 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       case QrType.text:
         return g('text');
       case QrType.wifi:
-        return 'WIFI:T:$_enc;S:${_wifiEscape(g('ssid'))};P:${_wifiEscape(g('password'))};;';
+        final hidden = _hidden ? 'H:true;' : '';
+        return 'WIFI:T:$_enc;S:${_wifiEscape(g('ssid'))};P:${_wifiEscape(g('password'))};$hidden';
       case QrType.contact:
+        final website = g('website').isNotEmpty ? '\nURL:${g('website')}' : '';
         return 'BEGIN:VCARD\nVERSION:3.0\nFN:${g('name')}\n'
-            'TEL:${g('phone')}\nEMAIL:${g('email')}\nORG:${g('org')}\nEND:VCARD';
+            'TEL:${g('phone')}\nEMAIL:${g('email')}\nORG:${g('org')}$website\nEND:VCARD';
       case QrType.email:
         return 'mailto:${g('to')}?subject=${Uri.encodeComponent(g('subject'))}'
             '&body=${Uri.encodeComponent(g('body'))}';
@@ -258,8 +320,9 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       case QrType.location:
         return 'geo:${g('lat')},${g('lng')}';
       case QrType.event:
+        final desc = g('description').isNotEmpty ? '\nDESCRIPTION:${g('description')}' : '';
         return 'BEGIN:VEVENT\nSUMMARY:${g('title')}\nLOCATION:${g('location')}\n'
-            'DTSTART:${g('start')}\nDTEND:${g('end')}\nEND:VEVENT';
+            'DTSTART:${g('start')}\nDTEND:${g('end')}$desc\nEND:VEVENT';
       case QrType.crypto:
         final amt = g('amount').isEmpty ? '' : '?amount=${g('amount')}';
         return '$_coin:${g('address')}$amt';
@@ -364,6 +427,134 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     setState(() => _data = _build());
   }
 
+  Future<void> _loadPresets() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final presetsDir = Directory('${dir.path}/qr_presets');
+    if (!await presetsDir.exists()) return;
+    final files = await presetsDir.list().where((f) => f.path.endsWith('.json')).toList();
+    _presets = [];
+    for (final f in files) {
+      final json = jsonDecode(await (f as File).readAsString());
+      _presets.add(json);
+    }
+    _presets.sort((a, b) => (b['date'] ?? '').compareTo(a['date'] ?? ''));
+  }
+
+  Future<void> _savePreset(String name) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final presetsDir = Directory('${dir.path}/qr_presets');
+    await presetsDir.create(recursive: true);
+    final preset = {
+      'name': name,
+      'designIndex': _designIndex,
+      'fg': _fg.toARGB32(),
+      'bg': _bg.toARGB32(),
+      'date': DateTime.now().toIso8601String(),
+    };
+    final file = File('${presetsDir.path}/${name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json');
+    await file.writeAsString(jsonEncode(preset));
+    await _loadPresets();
+  }
+
+  Future<void> _deletePreset(Map<String, dynamic> preset) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final name = preset['name'] as String;
+    final file = File('${dir.path}/qr_presets/${name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json');
+    if (await file.exists()) await file.delete();
+    await _loadPresets();
+  }
+
+  void _applyPreset(Map<String, dynamic> preset) {
+    setState(() {
+      _designIndex = preset['designIndex'] ?? 0;
+      _fg = Color(preset['fg'] ?? 0xFF000000);
+      _bg = Color(preset['bg'] ?? 0xFFFFFFFF);
+    });
+  }
+
+  Future<void> _savePresetDialog() async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save Style Preset'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            labelText: 'Preset name',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    await _savePreset(name);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" saved')));
+  }
+
+  void _showPresetSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (ctx, scrollCtrl) => Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Style Presets', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              child: _presets.isEmpty
+                  ? const Center(child: Text('No saved presets'))
+                  : ListView.builder(
+                      controller: scrollCtrl,
+                      itemCount: _presets.length,
+                      itemBuilder: (ctx, i) {
+                        final p = _presets[i];
+                        return ListTile(
+                          leading: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(width: 16, height: 16, decoration: BoxDecoration(color: Color(p['fg'] ?? 0xFF000000), shape: BoxShape.circle)),
+                              const SizedBox(width: 4),
+                              Container(width: 16, height: 16, decoration: BoxDecoration(color: Color(p['bg'] ?? 0xFFFFFFFF), shape: BoxShape.circle, border: Border.all(color: Colors.grey))),
+                            ],
+                          ),
+                          title: Text(p['name'] ?? ''),
+                          onTap: () {
+                            _applyPreset(p);
+                            Navigator.pop(ctx);
+                          },
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            onPressed: () async {
+                              await _deletePreset(p);
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -395,6 +586,23 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           const SizedBox(height: 8),
           _colorRow('Foreground', _fg, (c) => setState(() => _fg = c)),
           _colorRow('Background', _bg, (c) => setState(() => _bg = c)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Text('Presets', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _showPresetSheet(),
+                icon: const Icon(Icons.folder_open, size: 18),
+                label: const Text('Load'),
+              ),
+              TextButton.icon(
+                onPressed: () => _savePresetDialog(),
+                icon: const Icon(Icons.save, size: 18),
+                label: const Text('Save'),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           _logoRow(),
           const SizedBox(height: 16),
