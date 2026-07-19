@@ -19,12 +19,9 @@ Scan, edit, sign, convert and organise your documents — completely offline.
 
 Grab the latest APK from the [**Releases page**](https://github.com/OmVK/xscan/releases/latest):
 
-| APK | Best for | Size |
+| File | Best for | Size |
 | --- | --- | --- |
-| `xscan-vX.X.X-universal.apk` | **Any Android phone** — use this if unsure | ~164 MB |
-| `xscan-vX.X.X-arm64-v8a.apk` | Modern 64-bit phones (Pixel & most phones from the last ~8 years) | ~61 MB |
-
-> Both APKs contain the **exact same features**. The universal build simply bundles code for every CPU type, while the arm64 build is trimmed down for 64-bit devices.
+| `app-release.apk` | **Any Android phone** — universal build | ~165 MB |
 
 **To install:** enable *"Install unknown apps"* for your browser or file manager, then open the downloaded APK.
 
@@ -57,10 +54,17 @@ Grab the latest APK from the [**Releases page**](https://github.com/OmVK/xscan/r
 
 ### Organisation & Privacy
 - Folders, tags, notes and favorites
-- **Archive**, **Trash** (with secure file wiping) and a **Hidden vault** protected by biometrics
+- **Archive**, **Trash** (with secure file wiping) and a **Hidden vault** protected by AES-256-CBC encryption
 - **Biometric app lock**
-- Local **backup & restore** to a `.zip`
+- Local **backup & restore** to a `.zip` (with zip-slip protection)
 - **100% offline** — AI assistance, translation and text-to-speech all run on-device
+
+### Security
+- **AES-256 PDF encryption** via Syncfusion (replaced deprecated RC4-128)
+- **AES-256-CBC vault encryption** for hidden documents (key stored in `flutter_secure_storage`)
+- **Zip-slip protection** prevents path traversal attacks during backup restore
+- **URL scheme validation** — only `http`/`https` links can be opened externally
+- **WiFi QR escaping** handles special characters in network names
 
 ### Extras
 - Offline **AI assistant**: auto-detect document type, suggest titles/folders, summarise, extract invoice/receipt data, and answer questions
@@ -122,6 +126,7 @@ flutter test
 | QR | `qr_flutter` |
 | Imaging | `image`, `image_cropper`, `image_picker` |
 | On-device AI | `google_mlkit_translation`, `flutter_tts` |
+| Security | `flutter_secure_storage`, `encrypt` (AES-256-CBC vault encryption) |
 | Platform | `local_auth`, `receive_sharing_intent`, `share_plus`, `dynamic_color` |
 
 ---
@@ -133,7 +138,7 @@ lib/
 ├── core/
 │   ├── data/           # Isar models & database service
 │   ├── providers/      # Riverpod providers
-│   ├── services/       # PDF, image, AI, OCR, backup, print, etc.
+│   ├── services/       # PDF, image, AI, OCR, backup, vault, print, etc.
 │   └── theme/          # App theming (dynamic color)
 ├── features/
 │   ├── auth/           # Biometric lock
