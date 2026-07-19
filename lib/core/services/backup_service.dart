@@ -43,8 +43,47 @@ class BackupService {
 
   /// Restores a backup zip into the app documents directory, overwriting
   /// existing data. The app should be restarted afterwards.
+  ///
+  /// Validates all file paths to prevent zip-slip (path traversal) attacks.
   static Future<void> restoreBackup(String zipPath) async {
     final base = await getApplicationDocumentsDirectory();
-    await extractFileToDisk(zipPath, base.path);
+    final basePath = p.canonicalize(base.path);
+
+    final bytes = await File(zipPath).readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    for (final file in archive) {
+      final filePath = p.canonicalize(p.join(basePath, file.name));
+
+      // Zip-slip guard: the resolved path must be under the base directory.
+      if (!filePath.startsWith(basePath)) {
+        throw SecurityException(
+          'Backup contains path traversal: ${file.name}',
+        );
+      }
+
+      if (file.isFile) {
+        final outDir = Directory(p.dirname(filePath));
+        if (!await outDir.exists()) {
+          await outDir.create(recursive: true);
+        }
+        final output = File(filePath);
+        await output.writeAsBytes(file.content as List<int>, flush: true);
+      } else {
+        final dir = Directory(filePath);
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+      }
+    }
   }
+}
+
+/// Exception thrown when a security violation is detected during backup restore.
+class SecurityException implements Exception {
+  SecurityException(this.message);
+  final String message;
+
+  @override
+  String toString() => 'SecurityException: $message';
 }

@@ -143,9 +143,8 @@ class _PageManagerScreenState extends State<PageManagerScreen> {
               : ReorderableListView.builder(
                   padding: const EdgeInsets.all(12),
                   itemCount: _pages.length,
-                  onReorder: (oldIndex, newIndex) {
+                  onReorderItem: (oldIndex, newIndex) {
                     setState(() {
-                      if (newIndex > oldIndex) newIndex--;
                       final item = _pages.removeAt(oldIndex);
                       _pages.insert(newIndex, item);
                     });

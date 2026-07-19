@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsService {
   static const String _themeKey = 'theme_mode';
-  static const String _pdfPasswordKey = 'pdf_password';
   static const String _pdfWatermarkKey = 'pdf_watermark';
   static const String _appLockKey = 'app_lock';
   static const String _onboardingKey = 'onboarding_done';
   static const String _dynamicColorKey = 'dynamic_color';
   static const String _ocrScriptKey = 'ocr_script';
+  static const String _securePdfPasswordKey = 'pdf_password';
 
   final SharedPreferences _prefs;
+  final FlutterSecureStorage _secureStorage;
 
-  SettingsService(this._prefs);
+  SettingsService(this._prefs) : _secureStorage = const FlutterSecureStorage();
 
   // Theme
   ThemeMode getThemeMode() {
@@ -29,16 +31,16 @@ class SettingsService {
     await _prefs.setString(_themeKey, value);
   }
 
-  // PDF Password
-  String? getPdfPassword() {
-    return _prefs.getString(_pdfPasswordKey);
+  // PDF Password (stored securely)
+  Future<String?> getPdfPassword() async {
+    return await _secureStorage.read(key: _securePdfPasswordKey);
   }
 
   Future<void> setPdfPassword(String? password) async {
     if (password == null || password.isEmpty) {
-      await _prefs.remove(_pdfPasswordKey);
+      await _secureStorage.delete(key: _securePdfPasswordKey);
     } else {
-      await _prefs.setString(_pdfPasswordKey, password);
+      await _secureStorage.write(key: _securePdfPasswordKey, value: password);
     }
   }
 

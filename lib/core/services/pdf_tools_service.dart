@@ -14,6 +14,17 @@ enum PdfOverlayType { text, image, highlight, ink, underline }
 /// Supported interactive form field types.
 enum PdfFormFieldType { text, checkbox }
 
+/// Custom exception for PDF tool operations with user-friendly messages.
+class PdfToolException implements Exception {
+  PdfToolException(this.message, {this.originalError});
+
+  final String message;
+  final Object? originalError;
+
+  @override
+  String toString() => message;
+}
+
 /// Lightweight description of a PDF form field for the fill-forms UI.
 class PdfFormFieldInfo {
   PdfFormFieldInfo({
@@ -62,13 +73,28 @@ class PdfOverlay {
 class PdfToolsService {
   /// Merges multiple PDF files into a single document.
   Future<String> merge(List<String> paths, {String title = 'Merged'}) async {
+    if (paths.isEmpty) {
+      throw PdfToolException('No PDF files selected to merge.');
+    }
+
     final output = PdfDocument();
     output.pageSettings.margins.all = 0;
 
     for (final path in paths) {
-      final source = PdfDocument(inputBytes: File(path).readAsBytesSync());
-      _copyPages(source, output, List.generate(source.pages.count, (i) => i));
-      source.dispose();
+      final file = File(path);
+      if (!file.existsSync()) {
+        throw PdfToolException('File not found: ${path.split('/').last}');
+      }
+      try {
+        final source = PdfDocument(inputBytes: file.readAsBytesSync());
+        _copyPages(source, output, List.generate(source.pages.count, (i) => i));
+        source.dispose();
+      } catch (e) {
+        throw PdfToolException(
+          'Failed to read ${path.split('/').last}. The file may be corrupted or password-protected.',
+          originalError: e,
+        );
+      }
     }
 
     final bytes = await output.save();
@@ -83,7 +109,25 @@ class PdfToolsService {
     List<int> pageIndices, {
     String title = 'Pages',
   }) async {
-    final source = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    if (pageIndices.isEmpty) {
+      throw PdfToolException('No pages selected.');
+    }
+
+    final file = File(path);
+    if (!file.existsSync()) {
+      throw PdfToolException('PDF file not found.');
+    }
+
+    PdfDocument source;
+    try {
+      source = PdfDocument(inputBytes: file.readAsBytesSync());
+    } catch (e) {
+      throw PdfToolException(
+        'Failed to open PDF. The file may be corrupted or password-protected.',
+        originalError: e,
+      );
+    }
+
     final output = PdfDocument();
     output.pageSettings.margins.all = 0;
     _copyPages(source, output, pageIndices);
@@ -476,16 +520,42 @@ class PdfToolsService {
     String? currentPassword,
     String title = 'Protected',
   }) async {
-    final doc = PdfDocument(
-      inputBytes: File(path).readAsBytesSync(),
-      password: currentPassword,
-    );
-    doc.security.algorithm = PdfEncryptionAlgorithm.aesx256BitRevision6;
-    doc.security.userPassword = userPassword;
-    doc.security.ownerPassword = userPassword;
-    final bytes = await doc.save();
-    doc.dispose();
-    return AppStorage.writePdf(title, bytes);
+    if (userPassword.isEmpty) {
+      throw PdfToolException('Password cannot be empty.');
+    }
+
+    final file = File(path);
+    if (!file.existsSync()) {
+      throw PdfToolException('PDF file not found.');
+    }
+
+    PdfDocument doc;
+    try {
+      doc = PdfDocument(
+        inputBytes: file.readAsBytesSync(),
+        password: currentPassword,
+      );
+    } catch (e) {
+      throw PdfToolException(
+        'Failed to open PDF. Wrong password or corrupted file.',
+        originalError: e,
+      );
+    }
+
+    try {
+      doc.security.algorithm = PdfEncryptionAlgorithm.aesx256BitRevision6;
+      doc.security.userPassword = userPassword;
+      doc.security.ownerPassword = userPassword;
+      final bytes = await doc.save();
+      doc.dispose();
+      return AppStorage.writePdf(title, bytes);
+    } catch (e) {
+      doc.dispose();
+      throw PdfToolException(
+        'Failed to set password. The PDF may not support encryption.',
+        originalError: e,
+      );
+    }
   }
 
   /// Removes password protection (requires the current password to open).
@@ -584,9 +654,11 @@ class PdfToolsService {
   /// Returns the page count of a PDF file.
   int pageCount(String path) {
     final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    final count = doc.pages.count;
-    doc.dispose();
-    return count;
+    try {
+      return doc.pages.count;
+    } finally {
+      doc.dispose();
+    }
   }
 
   void _copyPages(PdfDocument source, PdfDocument output, List<int> indices) {

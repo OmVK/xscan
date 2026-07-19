@@ -48,7 +48,7 @@ class OcrService {
           await textRecognizer.processImage(inputImage);
       return recognizedText.text;
     } catch (e) {
-      return 'Error extracting text: $e';
+      return '';
     }
   }
 

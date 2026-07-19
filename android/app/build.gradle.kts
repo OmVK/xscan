@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+val hasValidSigning = keystoreProperties["storeFile"] != null &&
+        (keystoreProperties["storeFile"] as String).isNotEmpty()
 
 android {
     namespace = "com.xscan.xscan"
@@ -14,11 +25,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as? String ?: ""
+            keyPassword = keystoreProperties["keyPassword"] as? String ?: ""
+            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
+            storePassword = keystoreProperties["storePassword"] as? String ?: ""
+        }
+    }
+
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.xscan.xscan"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -27,12 +44,32 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasValidSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                // Fall back to debug signing for development builds only.
+                // For production releases, key.properties MUST be configured.
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+}
+
+
+// Validate signing configuration for release builds.
+gradle.projectsEvaluated {
+    tasks.withType<com.android.build.gradle.tasks.PackageApplication>().configureEach {
+        doFirst {
+            if (!hasValidSigning) {
+                logger.warn(
+                    "WARNING: No valid signing configuration found in key.properties. " +
+                    "The release APK/AAB will be signed with the debug key. " +
+                    "This is NOT suitable for production releases or Play Store uploads."
+                )
+            }
         }
     }
 }

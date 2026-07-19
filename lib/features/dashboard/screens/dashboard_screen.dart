@@ -33,6 +33,7 @@ import 'package:xscan/core/services/print_service.dart';
 import 'package:xscan/core/services/pdf_tools_service.dart';
 import 'package:xscan/core/services/biometric_service.dart';
 import 'package:xscan/features/tools/widgets/tool_result_sheet.dart';
+import 'package:xscan/core/widgets/confirm_dialog.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
 
@@ -48,11 +49,36 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<List<IncomingFile>>? _shareSub;
+  Timer? _searchDebounce;
+  final Set<String> _fileExistsCache = {};
 
   @override
   void initState() {
     super.initState();
     _initShareHandling();
+  }
+
+  /// Checks file existence using a cache to avoid synchronous disk I/O on the UI thread.
+  bool _fileExists(String path) {
+    if (_fileExistsCache.contains(path)) return true;
+    // First check is async-friendly via the cache; fallback to sync for correctness.
+    final exists = File(path).existsSync();
+    if (exists) _fileExistsCache.add(path);
+    return exists;
+  }
+
+  void _rebuildFileCache(List<ScanDocument> docs) {
+    for (final doc in docs) {
+      if (doc.filePath.isNotEmpty) {
+        File(doc.filePath).exists().then((exists) {
+          if (exists) {
+            _fileExistsCache.add(doc.filePath);
+          } else {
+            _fileExistsCache.remove(doc.filePath);
+          }
+        });
+      }
+    }
   }
 
   Future<void> _initShareHandling() async {
@@ -100,6 +126,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void dispose() {
     _searchController.dispose();
     _shareSub?.cancel();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -175,7 +202,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               border: InputBorder.none,
                             ),
                             onChanged: (value) {
-                              ref.read(searchQueryProvider.notifier).state = value;
+                              _searchDebounce?.cancel();
+                              _searchDebounce = Timer(
+                                const Duration(milliseconds: 300),
+                                () {
+                                  ref.read(searchQueryProvider.notifier).state = value;
+                                },
+                              );
                             },
                           )
                         : Text(
@@ -348,6 +381,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 return _buildEmptyState(selectedCategory);
               }
 
+              _rebuildFileCache(filteredDocs);
+
               return MasonryGridView.count(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 120), // Bottom padding for nav bar
                 crossAxisCount: 2,
@@ -356,9 +391,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 itemCount: filteredDocs.length,
                 itemBuilder: (context, index) {
                   final doc = filteredDocs[index];
-                  // Alternate height for staggered effect if no image
                   final double randomHeight = (index % 3 == 0) ? 220 : 180;
-                  final hasImage = doc.filePath.isNotEmpty && File(doc.filePath).existsSync();
+                  final hasImage = doc.filePath.isNotEmpty && _fileExists(doc.filePath);
 
                   return GestureDetector(
                     onTap: () {
@@ -399,6 +433,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               Image.file(
                                 File(doc.filePath),
                                 fit: BoxFit.cover,
+                                gaplessPlayback: true,
                               )
                             else
                               Center(
@@ -413,6 +448,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             Positioned(
                               bottom: 0, left: 0, right: 0,
                               child: ClipRRect(
+                                borderRadius: const BorderRadius.only(
+                                  bottomLeft: Radius.circular(20),
+                                  bottomRight: Radius.circular(20),
+                                ),
                                 child: BackdropFilter(
                                   filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
                                   child: Container(
@@ -616,23 +655,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _emptyTrash() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Empty Trash?'),
-        content: const Text(
-            'This permanently deletes all trashed documents and securely wipes their files.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete')),
-        ],
-      ),
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Empty Trash?',
+      content: 'This permanently deletes all trashed documents and securely wipes their files.',
+      confirmLabel: 'Delete',
     );
-    if (confirm != true) return;
+    if (!confirm) return;
     await ref.read(isarServiceProvider).emptyTrash();
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -640,38 +669,37 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildGroupedList(List<ScanDocument> docs) {
-    {
-        // Group documents by category.
-        final Map<String, List<ScanDocument>> grouped = {};
-        for (final doc in docs) {
-          grouped.putIfAbsent(doc.category, () => []).add(doc);
-        }
-        final categories = grouped.keys.toList()..sort();
+    // Group documents by category.
+    final Map<String, List<ScanDocument>> grouped = {};
+    for (final doc in docs) {
+      grouped.putIfAbsent(doc.category, () => []).add(doc);
+    }
+    final categories = grouped.keys.toList()..sort();
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          children: categories.map((category) {
-            final items = grouped[category]!;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    '$category (${items.length})',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
-                  ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+      children: categories.map((category) {
+        final items = grouped[category]!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                '$category (${items.length})',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.secondary,
                 ),
+              ),
+            ),
                 ...items.map((doc) {
                   final hasImage =
-                      doc.filePath.isNotEmpty && File(doc.filePath).existsSync();
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
+                      doc.filePath.isNotEmpty && _fileExists(doc.filePath);
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
                       leading: hasImage
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(8),
@@ -680,39 +708,39 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 width: 48,
                                 height: 48,
                                 fit: BoxFit.cover,
+                                gaplessPlayback: true,
                               ),
                             )
-                          : Icon(
-                              doc.category == 'Barcodes'
-                                  ? Icons.qr_code_2
-                                  : Icons.article,
-                            ),
-                      title: Text(
-                        doc.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      : Icon(
+                          doc.category == 'Barcodes'
+                              ? Icons.qr_code_2
+                              : Icons.article,
+                        ),
+                  title: Text(
+                    doc.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    doc.dateCreated.toLocal().toString().split('.')[0],
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            DocumentDetailScreen(document: doc),
                       ),
-                      subtitle: Text(
-                        doc.dateCreated.toLocal().toString().split('.')[0],
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                DocumentDetailScreen(document: doc),
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                }),
-              ],
-            );
-          }).toList(),
+                    );
+                  },
+                ),
+              );
+            }),
+          ],
         );
-    }
+      }).toList(),
+    );
   }
 
   void _openScanner(ScanMode mode) {

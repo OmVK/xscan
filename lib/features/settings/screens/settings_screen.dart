@@ -6,6 +6,7 @@ import 'package:xscan/core/providers/settings_provider.dart';
 import 'package:xscan/core/services/backup_service.dart';
 import 'package:xscan/core/services/biometric_service.dart';
 import 'package:xscan/core/providers/document_provider.dart';
+import 'package:xscan/core/widgets/confirm_dialog.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -68,27 +69,15 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _restore(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Restore backup?'),
-        content: const Text(
-          'This replaces your current documents and database with the '
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Restore backup?',
+      content: 'This replaces your current documents and database with the '
           'contents of the backup. Continue?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Restore'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Restore',
+      cancelLabel: 'Cancel',
     );
-    if (confirmed != true || !context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     const group = XTypeGroup(label: 'Backup', extensions: ['zip']);
     final file = await openFile(acceptedTypeGroups: [group]);
@@ -308,29 +297,27 @@ class SettingsScreen extends ConsumerWidget {
     switch (key) {
       case 'Latin':
         return 'Latin (English & European)';
+      case 'Chinese':
+        return 'Chinese (Simplified & Traditional)';
+      case 'Devanagari':
+        return 'Devanagari (Hindi, Sanskrit, etc.)';
+      case 'Japanese':
+        return 'Japanese';
+      case 'Korean':
+        return 'Korean';
       default:
         return key;
     }
   }
 
   Future<void> _emptyTrash(BuildContext context, WidgetRef ref) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Empty Trash?'),
-        content: const Text(
-            'This permanently deletes all trashed documents and securely wipes their files.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
-        ],
-      ),
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Empty Trash?',
+      content: 'This permanently deletes all trashed documents and securely wipes their files.',
+      confirmLabel: 'Delete',
     );
-    if (confirm != true || !context.mounted) return;
+    if (!confirm || !context.mounted) return;
     await ref.read(isarServiceProvider).emptyTrash();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)

@@ -48,3 +48,12 @@ app.*.map.json
 android/build/
 android/**/build/
 
+# Local configuration (machine-specific paths)
+android/local.properties
+
+# IDE files
+*.iml
+
+# Generated Isar code (regenerate with: dart run build_runner build --delete-conflicting-outputs)
+lib/core/data/models/scan_document.g.dart
+

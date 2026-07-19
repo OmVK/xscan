@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
+import 'package:xscan/core/services/vault_service.dart';
 
 class IsarService {
   late Future<Isar> db;
+  final VaultService _vault;
 
-  IsarService() {
+  IsarService({VaultService? vault}) : _vault = vault ?? VaultService() {
     db = openDB();
   }
 
@@ -35,7 +37,6 @@ class IsarService {
     return await isar.scanDocuments.where().sortByDateCreatedDesc().findAll();
   }
 
-  /// Moves a document to the trash (soft delete).
   Future<void> trashDocument(Id id) async {
     final isar = await db;
     await isar.writeTxn(() async {
@@ -97,9 +98,7 @@ class IsarService {
         await sink.close();
       }
       await file.delete();
-    } catch (_) {
-      // Best-effort deletion.
-    }
+    } catch (_) {}
   }
 
   Future<void> emptyTrash({bool secure = true}) async {
@@ -109,6 +108,52 @@ class IsarService {
     for (final doc in trashed) {
       await deleteDocument(doc.id, secure: secure);
     }
+  }
+
+  /// Hides a document and encrypts its files with AES-256.
+  Future<void> hideDocument(Id id) async {
+    final isar = await db;
+    final doc = await isar.scanDocuments.get(id);
+    if (doc == null) return;
+
+    final paths = <String>[
+      if (doc.filePath.isNotEmpty) doc.filePath,
+      ...?doc.additionalFilePaths,
+    ];
+    for (final path in paths) {
+      await _vault.encryptFile(path);
+    }
+
+    await isar.writeTxn(() async {
+      doc.isHidden = true;
+      await isar.scanDocuments.put(doc);
+    });
+  }
+
+  /// Unhides a document and decrypts its files.
+  Future<void> unhideDocument(Id id) async {
+    final isar = await db;
+    final doc = await isar.scanDocuments.get(id);
+    if (doc == null) return;
+
+    final paths = <String>[
+      if (doc.filePath.isNotEmpty) doc.filePath,
+      ...?doc.additionalFilePaths,
+    ];
+    for (final path in paths) {
+      await _vault.decryptFile(path);
+    }
+
+    await isar.writeTxn(() async {
+      doc.isHidden = false;
+      await isar.scanDocuments.put(doc);
+    });
+  }
+
+  /// Decrypts a file to a temporary location for viewing.
+  /// Returns the temp path, or the original path if not encrypted.
+  Future<String> decryptForViewing(String filePath) async {
+    return _vault.decryptToTemp(filePath);
   }
 
   Stream<List<ScanDocument>> listenToDocuments() async* {

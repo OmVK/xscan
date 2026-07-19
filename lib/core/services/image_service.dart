@@ -208,9 +208,8 @@ class ImageService {
         ext = 'jpg';
         break;
       case 'webp':
-        // image package has limited webp encode; fall back to png bytes.
-        bytes = img.encodePng(image);
-        ext = 'png';
+        bytes = img.encodeWebP(image);
+        ext = 'webp';
         break;
       case 'tiff':
         bytes = img.encodeTiff(image);

@@ -33,10 +33,17 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((r
 class PdfPasswordNotifier extends StateNotifier<String?> {
   final SettingsService _settingsService;
 
-  PdfPasswordNotifier(this._settingsService) : super(_settingsService.getPdfPassword());
+  PdfPasswordNotifier(this._settingsService) : super(null) {
+    _loadPassword();
+  }
 
-  void setPassword(String? password) {
-    _settingsService.setPdfPassword(password);
+  Future<void> _loadPassword() async {
+    final password = await _settingsService.getPdfPassword();
+    if (mounted) state = password;
+  }
+
+  Future<void> setPassword(String? password) async {
+    await _settingsService.setPdfPassword(password);
     state = password;
   }
 }

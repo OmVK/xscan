@@ -457,6 +457,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       await ref.read(isarServiceProvider).saveDocument(newDoc);
 
       if (!mounted) return;
+      HapticFeedback.heavyImpact();
       setState(() => _isProcessing = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -519,7 +520,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 child: FilledButton.icon(
                   onPressed: () async {
                     final uri = Uri.parse(value);
-                    if (await canLaunchUrl(uri)) {
+                    final safeSchemes = {'http', 'https'};
+                    if (safeSchemes.contains(uri.scheme) &&
+                        await canLaunchUrl(uri)) {
                       await launchUrl(uri,
                           mode: LaunchMode.externalApplication);
                     }
@@ -599,6 +602,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         ),
       ),
     );
+    controller.dispose();
 
     if (title != null && title.trim().isNotEmpty) {
       final isarService = ref.read(isarServiceProvider);

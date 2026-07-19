@@ -49,9 +49,8 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
           : ReorderableListView.builder(
               padding: const EdgeInsets.all(8),
               itemCount: _paths.length,
-              onReorder: (oldIndex, newIndex) {
+              onReorderItem: (oldIndex, newIndex) {
                 setState(() {
-                  if (newIndex > oldIndex) newIndex--;
                   final item = _paths.removeAt(oldIndex);
                   _paths.insert(newIndex, item);
                 });

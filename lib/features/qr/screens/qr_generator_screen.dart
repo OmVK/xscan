@@ -227,6 +227,15 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     );
   }
 
+  /// Escapes special characters for WiFi QR format (RFC 7987).
+  /// Escapes: \\, ;, , , : , "
+  String _wifiEscape(String s) => s
+      .replaceAll('\\', '\\\\')
+      .replaceAll(';', '\\;')
+      .replaceAll(',', '\\,')
+      .replaceAll(':', '\\:')
+      .replaceAll('"', '\\"');
+
   String _build() {
     String g(String k) => _ctrl(k).text.trim();
     switch (_type) {
@@ -235,7 +244,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       case QrType.text:
         return g('text');
       case QrType.wifi:
-        return 'WIFI:T:$_enc;S:${g('ssid')};P:${g('password')};;';
+        return 'WIFI:T:$_enc;S:${_wifiEscape(g('ssid'))};P:${_wifiEscape(g('password'))};;';
       case QrType.contact:
         return 'BEGIN:VCARD\nVERSION:3.0\nFN:${g('name')}\n'
             'TEL:${g('phone')}\nEMAIL:${g('email')}\nORG:${g('org')}\nEND:VCARD';
@@ -351,6 +360,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   }
 
   void _generate() {
+    HapticFeedback.mediumImpact();
     setState(() => _data = _build());
   }
 

@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
@@ -66,8 +66,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         final scriptKey = ref.read(ocrScriptProvider);
         final script =
             OcrService.scripts[scriptKey] ?? TextRecognitionScript.latin;
-        final newText =
-            await OcrService(script: script).extractTextFromImage(newImagePath);
+        final ocrService = OcrService(script: script);
+        final newText = await ocrService.extractTextFromImage(newImagePath);
+        ocrService.dispose();
         
         // Update document
         widget.document.additionalFilePaths = [
@@ -111,8 +112,39 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     try {
       final watermark = ref.read(pdfWatermarkProvider);
       final password = ref.read(pdfPasswordProvider);
+
+      // If document is hidden, decrypt files for PDF generation.
+      ScanDocument doc = widget.document;
+      if (doc.isHidden) {
+        final isarService = ref.read(isarServiceProvider);
+        final tempPaths = <String>[];
+        final allPaths = [doc.filePath, ...?doc.additionalFilePaths];
+        for (final p in allPaths) {
+          tempPaths.add(await isarService.decryptForViewing(p));
+        }
+        doc = ScanDocument()
+          ..id = doc.id
+          ..title = doc.title
+          ..filePath = tempPaths.first
+          ..additionalFilePaths =
+              tempPaths.length > 1 ? tempPaths.sublist(1) : null
+          ..ocrText = doc.ocrText
+          ..dateCreated = doc.dateCreated
+          ..category = doc.category
+          ..tags = doc.tags
+          ..folder = doc.folder
+          ..notes = doc.notes
+          ..docType = doc.docType
+          ..fileType = doc.fileType
+          ..isFavorite = doc.isFavorite
+          ..isTrashed = doc.isTrashed
+          ..isArchived = doc.isArchived
+          ..isHidden = doc.isHidden
+          ..barcodeFormat = doc.barcodeFormat;
+      }
+
       final path = await _pdfService.generatePdfFromDocument(
-        widget.document,
+        doc,
         watermark: watermark,
         password: password,
       );
@@ -264,18 +296,25 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
   Future<void> _toggleFlag(String flag) async {
     final doc = widget.document;
+    final isarService = ref.read(isarServiceProvider);
     switch (flag) {
       case 'favorite':
         doc.isFavorite = !doc.isFavorite;
+        HapticFeedback.lightImpact();
+        await isarService.saveDocument(doc);
         break;
       case 'archive':
         doc.isArchived = !doc.isArchived;
+        await isarService.saveDocument(doc);
         break;
       case 'hidden':
-        doc.isHidden = !doc.isHidden;
+        if (!doc.isHidden) {
+          await isarService.hideDocument(doc.id);
+        } else {
+          await isarService.unhideDocument(doc.id);
+        }
         break;
     }
-    await ref.read(isarServiceProvider).saveDocument(doc);
     if (mounted) setState(() {});
   }
 

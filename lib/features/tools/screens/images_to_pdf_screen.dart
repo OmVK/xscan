@@ -108,7 +108,7 @@ class ReorderableGridPlaceholder extends StatelessWidget {
     return ReorderableListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: paths.length,
-      onReorder: onReorder,
+      onReorderItem: onReorder,
       itemBuilder: (context, index) {
         return Card(
           key: ValueKey('$index-${paths[index]}'),

@@ -10,8 +10,8 @@
     <!-- For Android 10 and below -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <!-- For Android 11+ (Scoped Storage / All Files Access if building a true File Manager) -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- For Android 11+ (Scoped Storage / All Files Access for file manager integration) -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <!-- For Android 13+ Media -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
