@@ -199,9 +199,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                           errorBuilder: (_, _, _) =>
                               const Center(child: Text('Page render failed'))),
                     ),
-                    ..._pageOverlays.map((o) => RepaintBoundary(
-                          child: _buildOverlayWidget(o, size),
-                        )),
+                    ..._pageOverlays.map((o) => _buildOverlayWidget(o, size)),
                     if (_draftRect != null)
                       RepaintBoundary(
                         child: Positioned(
