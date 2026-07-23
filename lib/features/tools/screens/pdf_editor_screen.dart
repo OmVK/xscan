@@ -195,7 +195,9 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: Image.memory(_page!.bytes, fit: BoxFit.fill),
+                      child: Image.memory(_page!.bytes, fit: BoxFit.fill,
+                          errorBuilder: (_, _, _) =>
+                              const Center(child: Text('Page render failed'))),
                     ),
                     ..._pageOverlays.map((o) => RepaintBoundary(
                           child: _buildOverlayWidget(o, size),
@@ -250,7 +252,9 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         );
         break;
       case PdfOverlayType.image:
-        content = Image.memory(o.imageBytes!, fit: BoxFit.contain);
+        content = Image.memory(o.imageBytes!, fit: BoxFit.contain,
+            errorBuilder: (_, _, _) =>
+                Container(color: Colors.grey.shade200));
         break;
       case PdfOverlayType.highlight:
         content = Container(color: o.color.withValues(alpha: 0.35));
@@ -1006,10 +1010,16 @@ class _SignatureLibrarySheetState extends State<_SignatureLibrarySheet> {
                   mainAxisSpacing: 10,
                   crossAxisSpacing: 10,
                   childAspectRatio: 2,
-                  children: _saved.map((path) {
+                      children: _saved.map((path) {
                     return GestureDetector(
-                      onTap: () => Navigator.pop(
-                          context, File(path).readAsBytesSync()),
+                      onTap: () {
+                        try {
+                          final bytes = File(path).readAsBytesSync();
+                          Navigator.pop(context, bytes);
+                        } catch (_) {
+                          Navigator.pop(context);
+                        }
+                      },
                       onLongPress: () async {
                         await AppStorage.deleteSignature(path);
                         _load();
