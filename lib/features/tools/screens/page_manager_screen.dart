@@ -202,7 +202,26 @@ class _PageManagerScreenState extends State<PageManagerScreen> {
                               tooltip: 'Delete page',
                               icon: const Icon(Icons.delete_outline),
                               onPressed: _pages.length > 1
-                                  ? () => setState(() => _pages.removeAt(index))
+                                  ? () async {
+                                      final confirmed = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('Delete page?'),
+                                          content: Text('Remove page ${index + 1}?'),
+                                          actions: [
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(ctx, false),
+                                                child: const Text('Cancel')),
+                                            FilledButton(
+                                                onPressed: () => Navigator.pop(ctx, true),
+                                                child: const Text('Delete')),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirmed == true) {
+                                        setState(() => _pages.removeAt(index));
+                                      }
+                                    }
                                   : null,
                             ),
                           ],

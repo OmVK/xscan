@@ -33,7 +33,7 @@ void main() {
 
       expect(
         () => BackupService.restoreBackup(maliciousZip.path),
-        throwsA(isA<SecurityException>()),
+        throwsA(isA<BackupException>()),
       );
     }, skip: 'Requires path_provider platform plugin');
 
@@ -50,7 +50,7 @@ void main() {
 
       expect(
         () => BackupService.restoreBackup(maliciousZip.path),
-        throwsA(isA<SecurityException>()),
+        throwsA(isA<BackupException>()),
       );
     }, skip: 'Requires path_provider platform plugin');
 

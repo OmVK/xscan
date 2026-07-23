@@ -26,6 +26,7 @@ class _RedactPdfScreenState extends State<RedactPdfScreen> {
   final List<PdfOverlay> _overlays = [];
   Offset? _dragStart;
   Rect? _draftRect;
+  Color _redactColor = Colors.black;
 
   List<PdfOverlay> get _pageOverlays =>
       _overlays.where((o) => o.pageIndex == _pageIndex).toList();
@@ -39,7 +40,7 @@ class _RedactPdfScreenState extends State<RedactPdfScreen> {
       _overlays.clear();
       _pageIndex = 0;
     });
-    final count = _service.pageCount(path);
+    final count = await _service.pageCount(path);
     _pageCount = count;
     await _loadPage(0);
   }
@@ -91,7 +92,7 @@ class _RedactPdfScreenState extends State<RedactPdfScreen> {
             type: PdfOverlayType.redact,
             pageIndex: _pageIndex,
             rect: r,
-            color: Colors.black,
+            color: _redactColor,
           ));
         });
       }
@@ -173,6 +174,35 @@ class _RedactPdfScreenState extends State<RedactPdfScreen> {
           else ...[
             Expanded(child: _buildCanvas()),
             _buildPager(),
+            // Color picker
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  const Text('Color: ', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 8),
+                  ...[Colors.black, Colors.white, Colors.red, Colors.blue, Colors.green, Colors.yellow].map((c) {
+                    final selected = _redactColor.toARGB32() == c.toARGB32();
+                    return GestureDetector(
+                      onTap: () => setState(() => _redactColor = c),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: selected ? Theme.of(context).colorScheme.primary : Colors.grey,
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
           ],
           if (_pageOverlays.isNotEmpty)
             Container(

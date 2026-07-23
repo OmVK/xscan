@@ -17,6 +17,8 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
   final _service = PdfToolsService();
   String? _path;
   int? _originalBytes;
+  int? _compressedBytes;
+  String? _compressedPath;
   bool _busy = false;
 
   Future<void> _pick() async {
@@ -25,6 +27,8 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
     setState(() {
       _path = path;
       _originalBytes = File(path).lengthSync();
+      _compressedBytes = null;
+      _compressedPath = null;
     });
   }
 
@@ -35,15 +39,11 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
       final out = await _service.compress(_path!);
       final newBytes = File(out).lengthSync();
       if (!mounted) return;
-      setState(() => _busy = false);
-      final saved = (_originalBytes ?? newBytes) - newBytes;
-      final pct = _originalBytes != null && _originalBytes! > 0
-          ? (saved / _originalBytes! * 100).clamp(0, 100).toStringAsFixed(0)
-          : '0';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reduced by $pct%')),
-      );
-      await showPdfResult(context, out);
+      setState(() {
+        _busy = false;
+        _compressedBytes = newBytes;
+        _compressedPath = out;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -52,10 +52,28 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
     }
   }
 
-  String _fmt(int bytes) => '${(bytes / 1024).toStringAsFixed(0)} KB';
+  String _fmt(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  double? get _reductionPercent {
+    if (_originalBytes == null || _compressedBytes == null || _originalBytes == 0) {
+      return null;
+    }
+    return ((_originalBytes! - _compressedBytes!) / _originalBytes! * 100)
+        .clamp(0, 100)
+        .toDouble();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Compress PDF')),
       body: Center(
@@ -74,8 +92,58 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-                Text('Current size: ${_fmt(_originalBytes ?? 0)}'),
+                const SizedBox(height: 16),
+
+                // Before/After comparison
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _sizeCard('Original', _originalBytes, theme.colorScheme.error),
+                          const Icon(Icons.arrow_forward, color: Colors.grey),
+                          _sizeCard('Compressed', _compressedBytes, theme.colorScheme.primary),
+                        ],
+                      ),
+                      if (_reductionPercent != null) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.trending_down,
+                              color: theme.colorScheme.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_reductionPercent!.toStringAsFixed(1)}% smaller',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Saved ${_fmt((_originalBytes ?? 0) - (_compressedBytes ?? 0))}',
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ],
               const SizedBox(height: 24),
               OutlinedButton.icon(
@@ -95,10 +163,44 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                     : const Icon(Icons.compress),
                 label: const Text('Compress'),
               ),
+              if (_compressedPath != null) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => showPdfResult(context, _compressedPath!),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Open Result'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _sizeCard(String label, int? bytes, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          bytes != null ? _fmt(bytes) : '--',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

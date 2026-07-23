@@ -403,6 +403,75 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(summary),
+
+            // Invoice / Receipt extraction
+            if (docType == 'Invoice' || docType == 'Receipt') ...[
+              const Divider(height: 32),
+              Text(
+                docType == 'Invoice' ? 'Invoice Details' : 'Receipt Details',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Builder(builder: (context) {
+                final data = docType == 'Invoice'
+                    ? AiService.extractInvoice(text)
+                    : {'Total': AiService.extractReceiptTotal(text) ?? 'Not found'};
+                if (data.isEmpty) {
+                  return const Text('No structured data found.');
+                }
+                return Column(
+                  children: data.entries.map((e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 100,
+                          child: Text(e.key,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500, fontSize: 13)),
+                        ),
+                        Expanded(
+                          child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  )).toList(),
+                );
+              }),
+            ],
+
+            // Business card extraction
+            if (docType == 'Business Card') ...[
+              const Divider(height: 32),
+              const Text('Contact Details',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Builder(builder: (context) {
+                final card = AiService.extractBusinessCard(text);
+                if (card.isEmpty) {
+                  return const Text('No contact data found.');
+                }
+                return Column(
+                  children: card.entries.map((e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 80,
+                          child: Text(e.key,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500, fontSize: 13)),
+                        ),
+                        Expanded(
+                          child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  )).toList(),
+                );
+              }),
+            ],
+
             const Divider(height: 32),
             _AiQuestionBox(text: text),
           ],

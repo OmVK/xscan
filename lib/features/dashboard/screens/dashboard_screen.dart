@@ -31,11 +31,15 @@ import 'package:xscan/features/tools/screens/page_numbering_screen.dart';
 import 'package:xscan/features/tools/screens/watermark_templates_screen.dart';
 import 'package:xscan/features/tools/screens/redact_pdf_screen.dart';
 import 'package:xscan/features/tools/screens/bookmark_manager_screen.dart';
+import 'package:xscan/features/tools/screens/pdf_metadata_screen.dart';
+import 'package:xscan/features/tools/screens/pdf_compare_screen.dart';
 import 'package:xscan/features/tools/screens/page_rotation_screen.dart';
 import 'package:xscan/features/qr/screens/qr_generator_screen.dart';
 import 'package:xscan/features/qr/screens/batch_qr_screen.dart';
 import 'package:xscan/features/qr/screens/qr_history_screen.dart';
 import 'package:xscan/features/qr/screens/pdf_to_qr_screen.dart';
+import 'package:xscan/features/qr/screens/barcode_generator_screen.dart';
+import 'package:xscan/features/qr/screens/barcode_history_screen.dart';
 import 'package:xscan/features/tools/widgets/pdf_source_picker.dart';
 import 'package:xscan/core/providers/document_provider.dart';
 import 'package:xscan/core/services/print_service.dart';
@@ -55,6 +59,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _currentIndex = 0;
+  bool _useGrid = true;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<List<IncomingFile>>? _shareSub;
@@ -368,42 +373,63 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
-            children: ['All', 'Receipts', 'Documents', 'Notes', 'Barcodes'].map((category) {
-              final isSelected = selectedCategory == category;
-              return Padding(
-                padding: const EdgeInsets.only(right: 12.0),
-                child: GestureDetector(
-                  onTap: () {
-                    ref.read(categoryFilterProvider.notifier).state = category;
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isSelected 
-                        ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2) 
-                        : _glassFill,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
+            children: [
+              ...['All', 'Receipts', 'Documents', 'Notes', 'Barcodes'].map((category) {
+                final isSelected = selectedCategory == category;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: GestureDetector(
+                    onTap: () {
+                      ref.read(categoryFilterProvider.notifier).state = category;
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
                         color: isSelected 
-                          ? Theme.of(context).colorScheme.secondary 
-                          : _glassBorder,
-                        width: isSelected ? 1.5 : 1,
+                          ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2) 
+                          : _glassFill,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected 
+                            ? Theme.of(context).colorScheme.secondary 
+                            : _glassBorder,
+                          width: isSelected ? 1.5 : 1,
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      category,
-                      style: TextStyle(
-                        color: isSelected ? Theme.of(context).colorScheme.secondary : _onGlass,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        letterSpacing: 0.5,
+                      child: Text(
+                        category,
+                        style: TextStyle(
+                          color: isSelected ? Theme.of(context).colorScheme.secondary : _onGlass,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                   ),
+                );
+              }),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => setState(() => _useGrid = !_useGrid),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: _glassFill,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _glassBorder),
+                  ),
+                  child: Icon(
+                    _useGrid ? Icons.view_list : Icons.grid_view,
+                    size: 18,
+                    color: _onGlass,
+                  ),
                 ),
-              );
-            }).toList(),
+              ),
+            ],
           ),
         ),
+        // Folder & Tag filter chips
+        _buildFolderTagFilters(docsAsyncValue),
         
         // Documents Grid
         Expanded(
@@ -433,153 +459,118 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   }
                   return false;
                 },
-                child: MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  itemCount: visibleDocs.length,
-                  itemBuilder: (context, index) {
-                    final doc = visibleDocs[index];
-                    final double randomHeight = (index % 3 == 0) ? 220 : 180;
-                    final hasImage = doc.filePath.isNotEmpty && _fileExists(doc.filePath);
-
-                    return RepaintBoundary(
-                      child: Semantics(
-                        label: 'Document: ${doc.title}',
-                        button: true,
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => DocumentDetailScreen(document: doc),
-                              ),
-                            );
-                          },
-                          child: Hero(
-                          tag: doc.id.toString(),
-                          child: Container(
-                            height: hasImage ? null : randomHeight,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              gradient: hasImage ? null : const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Color(0xFF2B2B36),
-                                  Color(0xFF1E1E26),
-                                ],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 5),
-                                )
-                              ],
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Stack(
-                              fit: StackFit.passthrough,
-                              children: [
-                                if (hasImage)
-                                  Image.file(
-                                    File(doc.filePath),
-                                    fit: BoxFit.cover,
-                                    gaplessPlayback: true,
-                                    cacheWidth: 400,
-                                    cacheHeight: 400,
-                                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                                      if (wasSynchronouslyLoaded || frame != null) return child;
-                                      return AnimatedOpacity(
-                                        opacity: frame == null ? 0 : 1,
-                                        duration: const Duration(milliseconds: 300),
-                                        curve: Curves.easeOut,
-                                        child: child,
-                                      );
-                                    },
-                                    errorBuilder: (context, error, stackTrace) => Center(
-                                      child: Icon(
-                                        doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
-                                        size: 60,
-                                        color: Colors.white.withValues(alpha: 0.2),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Center(
-                                    child: Icon(
-                                      doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
-                                      size: 60,
-                                      color: Colors.white.withValues(alpha: 0.2),
-                                    ),
-                                  ),
-                                  
-                                // Glassmorphism title overlay at the bottom
-                                Positioned(
-                                  bottom: 0, left: 0, right: 0,
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.only(
-                                      bottomLeft: Radius.circular(20),
-                                      bottomRight: Radius.circular(20),
-                                    ),
-                                    child: BackdropFilter(
-                                      filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          border: Border(
-                                            top: BorderSide(
-                                              color: Colors.white.withValues(alpha: 0.1),
-                                            ),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              doc.title,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                                fontSize: 14,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              doc.category,
-                                              style: TextStyle(
-                                                color: Theme.of(context).colorScheme.secondary,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              ],
-                            ),
-                          ),
-                        ),
-                        ),
+                child: _useGrid
+                    ? MasonryGridView.count(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        itemCount: visibleDocs.length,
+                        itemBuilder: (context, index) => _buildDocumentCard(visibleDocs[index], index),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                        itemCount: visibleDocs.length,
+                        itemBuilder: (context, index) => _buildDocumentListTile(visibleDocs[index]),
                       ),
                     );
-                  },
-                ),
-              );
-            },
+              },
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, stack) => Center(child: Text('Error: $err')),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFolderTagFilters(AsyncValue<List<ScanDocument>> docsAsync) {
+    final activeFolder = ref.watch(folderFilterProvider);
+    final activeTag = ref.watch(tagFilterProvider);
+
+    return docsAsync.when(
+      data: (docs) {
+        // Collect unique folders and tags
+        final folders = <String>{};
+        final tags = <String>{};
+        for (final doc in docs) {
+          if (doc.folder != null && doc.folder!.isNotEmpty) {
+            folders.add(doc.folder!);
+          }
+          tags.addAll(doc.tags);
+        }
+        if (folders.isEmpty && tags.isEmpty) return const SizedBox.shrink();
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: [
+              if (activeFolder != null && activeFolder.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Chip(
+                    label: Text('Folder: $activeFolder', style: const TextStyle(fontSize: 11)),
+                    deleteIcon: const Icon(Icons.close, size: 14),
+                    onDeleted: () => ref.read(folderFilterProvider.notifier).state = null,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              if (activeTag != null && activeTag.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Chip(
+                    label: Text('Tag: $activeTag', style: const TextStyle(fontSize: 11)),
+                    deleteIcon: const Icon(Icons.close, size: 14),
+                    onDeleted: () => ref.read(tagFilterProvider.notifier).state = null,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              // Show folder chips (first 5)
+              ...folders.take(5).map((f) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => ref.read(folderFilterProvider.notifier).state = f,
+                      child: Chip(
+                        avatar: Icon(Icons.folder, size: 14,
+                            color: activeFolder == f
+                                ? Theme.of(context).colorScheme.primary
+                                : null),
+                        label: Text(f, style: const TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: activeFolder == f
+                            ? BorderSide(color: Theme.of(context).colorScheme.primary)
+                            : null,
+                      ),
+                    ),
+                  )),
+              // Show tag chips (first 5)
+              ...tags.take(5).map((t) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => ref.read(tagFilterProvider.notifier).state = t,
+                      child: Chip(
+                        avatar: Icon(Icons.label, size: 14,
+                            color: activeTag == t
+                                ? Theme.of(context).colorScheme.primary
+                                : null),
+                        label: Text(t, style: const TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: activeTag == t
+                            ? BorderSide(color: Theme.of(context).colorScheme.primary)
+                            : null,
+                      ),
+                    ),
+                  )),
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, e) => const SizedBox.shrink(),
     );
   }
 
@@ -655,6 +646,195 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDocumentCard(ScanDocument doc, int index) {
+    final double randomHeight = (index % 3 == 0) ? 220 : 180;
+    final hasImage = doc.filePath.isNotEmpty && _fileExists(doc.filePath);
+
+    return RepaintBoundary(
+      child: Semantics(
+        label: 'Document: ${doc.title}',
+        button: true,
+        child: GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DocumentDetailScreen(document: doc),
+              ),
+            );
+          },
+          child: Hero(
+            tag: doc.id.toString(),
+            child: Container(
+              height: hasImage ? null : randomHeight,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: hasImage ? null : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF2B2B36), Color(0xFF1E1E26)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  )
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  if (hasImage)
+                    Image.file(
+                      File(doc.filePath),
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      cacheWidth: 400,
+                      cacheHeight: 400,
+                      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                        if (wasSynchronouslyLoaded) return child;
+                        return AnimatedOpacity(
+                          opacity: frame != null ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                          child: child,
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) => Center(
+                        child: Icon(
+                          doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
+                          size: 60,
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
+                      ),
+                    )
+                  else
+                    Center(
+                      child: Icon(
+                        doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
+                        size: 60,
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
+                    ),
+                  Positioned(
+                    bottom: 0, left: 0, right: 0,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            border: Border(
+                              top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                doc.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                doc.category,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.secondary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentListTile(ScanDocument doc) {
+    final hasImage = doc.filePath.isNotEmpty && _fileExists(doc.filePath);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: _glassFill,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: _glassBorder),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(12),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: hasImage
+              ? Image.file(
+                  File(doc.filePath),
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                )
+              : Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    doc.category == 'Barcodes' ? Icons.qr_code_2 : Icons.article,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+        ),
+        title: Text(
+          doc.title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          doc.category,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.secondary,
+            fontSize: 12,
+          ),
+        ),
+        trailing: Icon(Icons.chevron_right, color: _onGlass),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DocumentDetailScreen(document: doc),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -925,11 +1105,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             MaterialPageRoute(builder: (_) => const QrHistoryScreen())),
       ),
       (
-        Icons.picture_as_pdf,
+        Icons.qr_code_2,
         'QR from PDF',
         'Extract text to QR',
         () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const PdfToQrScreen())),
+      ),
+      (
+        Icons.qr_code,
+        'Barcode Generator',
+        'Create 1D barcodes',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const BarcodeGeneratorScreen())),
+      ),
+      (
+        Icons.history,
+        'Barcode History',
+        'View scanned barcodes',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const BarcodeHistoryScreen())),
       ),
     ];
 
@@ -1032,6 +1226,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         'Edit table of contents',
         () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const BookmarkManagerScreen())),
+      ),
+      (
+        Icons.info_outline,
+        'PDF Metadata',
+        'Edit author, title, etc.',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PdfMetadataScreen())),
+      ),
+      (
+        Icons.compare,
+        'Compare PDFs',
+        'Side-by-side diff',
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PdfCompareScreen())),
       ),
       (
         Icons.rotate_right,

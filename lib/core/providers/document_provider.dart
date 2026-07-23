@@ -30,6 +30,12 @@ final dateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 /// Optional file-type filter (e.g. 'pdf', 'scan', 'barcode', 'qr').
 final fileTypeFilterProvider = StateProvider<String?>((ref) => null);
 
+/// Optional folder filter.
+final folderFilterProvider = StateProvider<String?>((ref) => null);
+
+/// Optional tag filter.
+final tagFilterProvider = StateProvider<String?>((ref) => null);
+
 final filteredDocumentsProvider =
     Provider<AsyncValue<List<ScanDocument>>>((ref) {
   final docsAsync = ref.watch(documentsStreamProvider);
@@ -38,6 +44,8 @@ final filteredDocumentsProvider =
   final view = ref.watch(documentViewProvider);
   final dateRange = ref.watch(dateRangeProvider);
   final fileType = ref.watch(fileTypeFilterProvider);
+  final folderFilter = ref.watch(folderFilterProvider);
+  final tagFilter = ref.watch(tagFilterProvider);
 
   return docsAsync.whenData((docs) {
     return docs.where((doc) {
@@ -88,7 +96,10 @@ final filteredDocumentsProvider =
       return matchesCategory &&
           matchesType &&
           matchesDate &&
-          matchesSearch;
+          matchesSearch &&
+          (folderFilter == null || folderFilter.isEmpty ||
+              (doc.folder != null && doc.folder == folderFilter)) &&
+          (tagFilter == null || tagFilter.isEmpty || doc.tags.contains(tagFilter));
     }).toList();
   });
 });

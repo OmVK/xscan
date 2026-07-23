@@ -87,14 +87,19 @@ class PdfRenderService {
     return pages;
   }
 
-  /// Renders every page to a PNG file in export storage and returns the paths.
+  /// Renders every page to a PNG/JPEG file in export storage and returns the paths.
   Future<List<String>> renderAllToFiles(
     String path, {
     double scale = 2.0,
+    String format = 'png',
     void Function(int done, int total)? onProgress,
   }) async {
     final doc = await pdfx.PdfDocument.openFile(path);
     final paths = <String>[];
+    final imgFormat = format == 'jpeg'
+        ? pdfx.PdfPageImageFormat.jpeg
+        : pdfx.PdfPageImageFormat.png;
+    final ext = format == 'jpeg' ? 'jpg' : 'png';
     try {
       final total = doc.pagesCount;
       for (var i = 1; i <= total; i++) {
@@ -103,11 +108,11 @@ class PdfRenderService {
           final image = await page.render(
             width: page.width * scale,
             height: page.height * scale,
-            format: pdfx.PdfPageImageFormat.png,
+            format: imgFormat,
             backgroundColor: '#FFFFFF',
           );
           if (image != null) {
-            paths.add(await AppStorage.writeExport('page_$i.png', image.bytes));
+            paths.add(await AppStorage.writeExport('page_$i.$ext', image.bytes));
           }
         } finally {
           await page.close();

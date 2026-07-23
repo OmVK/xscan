@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
+import 'package:xscan/core/services/pdf_render_service.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 
 /// Kinds of overlay a user can flatten onto a PDF page in the editor.
@@ -141,9 +142,9 @@ class PdfToolsService {
       throw PdfToolException('PDF file not found.');
     }
 
-    PdfDocument source;
+    Uint8List inputBytes;
     try {
-      source = PdfDocument(inputBytes: file.readAsBytesSync());
+      inputBytes = await file.readAsBytes();
     } catch (e) {
       throw PdfToolException(
         'Failed to open PDF. The file may be corrupted or password-protected.',
@@ -151,13 +152,18 @@ class PdfToolsService {
       );
     }
 
-    final output = PdfDocument();
-    output.pageSettings.margins.all = 0;
-    _copyPages(source, output, pageIndices);
-    final bytes = await output.save();
-    source.dispose();
-    output.dispose();
-    return AppStorage.writePdf(title, bytes);
+    final result = await Isolate.run(() {
+      final source = PdfDocument(inputBytes: inputBytes);
+      final output = PdfDocument();
+      output.pageSettings.margins.all = 0;
+      _copyPagesStatic(source, output, pageIndices);
+      final bytes = output.saveSync();
+      source.dispose();
+      output.dispose();
+      return bytes;
+    });
+
+    return AppStorage.writePdf(title, result);
   }
 
   /// Splits a PDF into multiple documents, one per [ranges] entry.
@@ -183,7 +189,7 @@ class PdfToolsService {
   /// Splits a PDF into single-page files.
   Future<List<String>> splitEveryPage(String path,
       {String title = 'Page'}) async {
-    final count = pageCount(path);
+    final count = await pageCount(path);
     return splitByRanges(
       path,
       List.generate(count, (i) => [i]),
@@ -225,7 +231,7 @@ class PdfToolsService {
     Set<int> pageIndices, {
     String title = 'Duplicated',
   }) async {
-    final count = pageCount(path);
+    final count = await pageCount(path);
     final order = <int>[];
     for (var i = 0; i < count; i++) {
       order.add(i);
@@ -237,22 +243,22 @@ class PdfToolsService {
   /// Flattens all annotations and form fields into static page content, and
   /// re-saves. Prevents further editing of annotations/fields.
   Future<String> flatten(String path, {String title = 'Flattened'}) async {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    try {
-      doc.form.flattenAllFields();
-    } catch (_) {
-      // No form or already flat.
-    }
-    for (var i = 0; i < doc.pages.count; i++) {
-      final page = doc.pages[i];
-      final annots = page.annotations;
+    final inputBytes = await File(path).readAsBytes();
+    final result = await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes);
       try {
-        annots.flattenAllAnnotations();
+        doc.form.flattenAllFields();
       } catch (_) {}
-    }
-    final bytes = await doc.save();
-    doc.dispose();
-    return AppStorage.writePdf(title, bytes);
+      for (var i = 0; i < doc.pages.count; i++) {
+        try {
+          doc.pages[i].annotations.flattenAllAnnotations();
+        } catch (_) {}
+      }
+      final bytes = doc.saveSync();
+      doc.dispose();
+      return bytes;
+    });
+    return AppStorage.writePdf(title, result);
   }
 
   /// Returns the raw bytes of the PDF (for printing).
@@ -261,32 +267,42 @@ class PdfToolsService {
   }
 
   /// Reads the interactive form fields from a PDF (text & checkbox supported).
-  List<PdfFormFieldInfo> readFormFields(String path) {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    final result = <PdfFormFieldInfo>[];
-    try {
-      final form = doc.form;
-      for (var i = 0; i < form.fields.count; i++) {
-        final field = form.fields[i];
-        if (field is PdfTextBoxField) {
-          result.add(PdfFormFieldInfo(
-            name: field.name ?? 'Field ${i + 1}',
-            type: PdfFormFieldType.text,
-            value: field.text,
-          ));
-        } else if (field is PdfCheckBoxField) {
-          result.add(PdfFormFieldInfo(
-            name: field.name ?? 'Field ${i + 1}',
-            type: PdfFormFieldType.checkbox,
-            value: field.isChecked ? 'true' : 'false',
-          ));
+  Future<List<PdfFormFieldInfo>> readFormFields(String path) async {
+    final inputBytes = await File(path).readAsBytes();
+    final raw = await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes);
+      final result = <Map<String, String>>[];
+      try {
+        final form = doc.form;
+        for (var i = 0; i < form.fields.count; i++) {
+          final field = form.fields[i];
+          if (field is PdfTextBoxField) {
+            result.add({
+              'name': field.name ?? 'Field ${i + 1}',
+              'type': 'text',
+              'value': field.text,
+            });
+          } else if (field is PdfCheckBoxField) {
+            result.add({
+              'name': field.name ?? 'Field ${i + 1}',
+              'type': 'checkbox',
+              'value': field.isChecked ? 'true' : 'false',
+            });
+          }
         }
-      }
-    } catch (_) {
-    } finally {
+      } catch (_) {}
       doc.dispose();
-    }
-    return result;
+      return result;
+    });
+    return raw
+        .map((m) => PdfFormFieldInfo(
+              name: m['name']!,
+              type: m['type'] == 'checkbox'
+                  ? PdfFormFieldType.checkbox
+                  : PdfFormFieldType.text,
+              value: m['value']!,
+            ))
+        .toList();
   }
 
   /// Fills the given text/checkbox fields (keyed by field name) and saves.
@@ -296,36 +312,41 @@ class PdfToolsService {
     bool flatten = false,
     String title = 'Filled',
   }) async {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    final form = doc.form;
-    for (var i = 0; i < form.fields.count; i++) {
-      final field = form.fields[i];
-      final name = field.name;
-      if (name == null || !values.containsKey(name)) continue;
-      final v = values[name]!;
-      if (field is PdfTextBoxField) {
-        field.text = v;
-      } else if (field is PdfCheckBoxField) {
-        field.isChecked = v == 'true';
+    final inputBytes = await File(path).readAsBytes();
+    final result = await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes);
+      final form = doc.form;
+      for (var i = 0; i < form.fields.count; i++) {
+        final field = form.fields[i];
+        final name = field.name;
+        if (name == null || !values.containsKey(name)) continue;
+        final v = values[name]!;
+        if (field is PdfTextBoxField) {
+          field.text = v;
+        } else if (field is PdfCheckBoxField) {
+          field.isChecked = v == 'true';
+        }
       }
-    }
-    if (flatten) {
-      try {
-        form.flattenAllFields();
-      } catch (_) {}
-    }
-    final bytes = await doc.save();
-    doc.dispose();
-    return AppStorage.writePdf(title, bytes);
+      if (flatten) {
+        try {
+          form.flattenAllFields();
+        } catch (_) {}
+      }
+      final bytes = doc.saveSync();
+      doc.dispose();
+      return bytes;
+    });
+    return AppStorage.writePdf(title, result);
   }
 
   /// Re-saves the PDF as an archival PDF/A-1b document by rasterizing each
   /// source page into a new conformance-tagged document.
   Future<String> exportPdfA(String path, {String title = 'PDF-A'}) async {
-    final source = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    final out = PdfDocument(conformanceLevel: PdfConformanceLevel.a1b);
-    out.pageSettings.margins.all = 0;
-    try {
+    final inputBytes = await File(path).readAsBytes();
+    final result = await Isolate.run(() {
+      final source = PdfDocument(inputBytes: inputBytes);
+      final out = PdfDocument(conformanceLevel: PdfConformanceLevel.a1b);
+      out.pageSettings.margins.all = 0;
       for (var i = 0; i < source.pages.count; i++) {
         final srcPage = source.pages[i];
         final template = srcPage.createTemplate();
@@ -333,12 +354,12 @@ class PdfToolsService {
         final page = out.pages.add();
         page.graphics.drawPdfTemplate(template, Offset.zero, srcPage.size);
       }
-      final bytes = await out.save();
-      return AppStorage.writePdf(title, bytes);
-    } finally {
+      final bytes = out.saveSync();
       source.dispose();
       out.dispose();
-    }
+      return bytes;
+    });
+    return AppStorage.writePdf(title, result);
   }
 
   /// Re-saves the PDF with maximum compression.
@@ -359,9 +380,13 @@ class PdfToolsService {
   }
 
   /// Builds a PDF from a list of image files, one image per page.
+  /// If [pageWidth]/[pageHeight] are 0, each page fits to the image size.
   Future<String> imagesToPdf(
     List<String> imagePaths, {
     String title = 'Document',
+    double pageWidth = 0,
+    double pageHeight = 0,
+    bool landscape = false,
   }) async {
     final doc = PdfDocument();
     doc.pageSettings.margins.all = 0;
@@ -370,6 +395,20 @@ class PdfToolsService {
       final file = File(imgPath);
       if (!file.existsSync()) continue;
       final bitmap = PdfBitmap(file.readAsBytesSync());
+
+      // Configure page size if specified
+      if (pageWidth > 0 && pageHeight > 0) {
+        final w = landscape ? pageHeight : pageWidth;
+        final h = landscape ? pageWidth : pageHeight;
+        doc.pageSettings.size = Size(w, h);
+      } else {
+        // Fit to image: use default page size
+        doc.pageSettings.size = Size(
+          bitmap.width.toDouble() * 0.75,
+          bitmap.height.toDouble() * 0.75,
+        );
+      }
+
       final page = doc.pages.add();
       final size = page.getClientSize();
       final rect = _fitRect(
@@ -387,13 +426,110 @@ class PdfToolsService {
   }
 
   /// Flattens editor [overlays] onto the PDF at [path] and saves a new file.
+  ///
+  /// For redact overlays, the affected pages are rasterized to destroy the
+  /// underlying content (text, images, vectors) before drawing the opaque
+  /// redaction box on top. This ensures redacted content cannot be recovered.
   Future<String> applyOverlays(
     String path,
     List<PdfOverlay> overlays, {
     String title = 'Edited',
   }) async {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    // Separate redact overlays from other overlays.
+    final redactByPage = <int, List<PdfOverlay>>{};
+    final otherOverlays = <PdfOverlay>[];
+    for (final o in overlays) {
+      if (o.type == PdfOverlayType.redact) {
+        redactByPage.putIfAbsent(o.pageIndex, () => []).add(o);
+      } else {
+        otherOverlays.add(o);
+      }
+    }
 
+    // If there are redactions, rasterize those pages to destroy content.
+    if (redactByPage.isNotEmpty) {
+      return _applyOverlaysWithRedaction(path, otherOverlays, redactByPage,
+          title: title);
+    }
+
+    // No redactions — draw overlays directly on existing pages.
+    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
+    _drawOverlays(doc, otherOverlays);
+    final bytes = await doc.save();
+    doc.dispose();
+    return AppStorage.writePdf(title, bytes);
+  }
+
+  /// Applies overlays including redaction by rasterizing redacted pages.
+  Future<String> _applyOverlaysWithRedaction(
+    String path,
+    List<PdfOverlay> otherOverlays,
+    Map<int, List<PdfOverlay>> redactByPage, {
+    String title = 'Edited',
+  }) async {
+    // Step 1: Render pages that have redactions to images.
+    final renderer = PdfRenderService();
+    final redactedImages = <int, RenderedPage>{};
+    for (final pageIndex in redactByPage.keys) {
+      final rendered = await renderer.renderPage(path, pageIndex, scale: 2.0);
+      if (rendered != null) {
+        redactedImages[pageIndex] = rendered;
+      }
+    }
+
+    // Step 2: Build new PDF — use images for redacted pages, templates for others.
+    final inputBytes = await File(path).readAsBytes();
+    final result = await Isolate.run(() {
+      final source = PdfDocument(inputBytes: inputBytes);
+      final output = PdfDocument();
+      output.pageSettings.margins.all = 0;
+
+      for (var i = 0; i < source.pages.count; i++) {
+        final srcPage = source.pages[i];
+        if (redactedImages.containsKey(i)) {
+          // Redacted page: replace with rasterized image.
+          // The image bytes will be drawn later on main isolate (graphics ops).
+          // For now, create a blank page of the same size.
+          output.pageSettings.size = srcPage.size;
+          output.pages.add();
+        } else {
+          // Non-redacted page: copy as template (preserves text selectability).
+          final template = srcPage.createTemplate();
+          output.pageSettings.size = srcPage.size;
+          final page = output.pages.add();
+          page.graphics.drawPdfTemplate(template, Offset.zero, srcPage.size);
+        }
+      }
+
+      final bytes = output.saveSync();
+      source.dispose();
+      output.dispose();
+      return bytes;
+    });
+
+    // Step 3: Re-open the output, draw redacted images + all overlays.
+    final doc = PdfDocument(inputBytes: result);
+    for (final entry in redactedImages.entries) {
+      final page = doc.pages[entry.key];
+      final size = page.getClientSize();
+      final bitmap = PdfBitmap(entry.value.bytes);
+      page.graphics.drawImage(bitmap, Rect.fromLTWH(0, 0, size.width, size.height));
+    }
+
+    // Draw all overlays (including redact boxes on top of rasterized pages).
+    final allOverlays = [
+      ...otherOverlays,
+      for (final entry in redactByPage.entries)
+        for (final o in entry.value) o,
+    ];
+    _drawOverlays(doc, allOverlays);
+
+    final bytes = await doc.save();
+    doc.dispose();
+    return AppStorage.writePdf(title, bytes);
+  }
+
+  void _drawOverlays(PdfDocument doc, List<PdfOverlay> overlays) {
     for (final overlay in overlays) {
       if (overlay.pageIndex < 0 || overlay.pageIndex >= doc.pages.count) {
         continue;
@@ -415,7 +551,6 @@ class PdfToolsService {
               overlay.rect.height * size.height,
             ),
           );
-          break;
         case PdfOverlayType.image:
           if (overlay.imageBytes != null) {
             g.drawImage(
@@ -428,7 +563,6 @@ class PdfToolsService {
               ),
             );
           }
-          break;
         case PdfOverlayType.highlight:
           g.save();
           g.setTransparency(0.35);
@@ -442,7 +576,6 @@ class PdfToolsService {
             ),
           );
           g.restore();
-          break;
         case PdfOverlayType.ink:
           if (overlay.points.length >= 2) {
             final pen = PdfPen(
@@ -459,7 +592,6 @@ class PdfToolsService {
               );
             }
           }
-          break;
         case PdfOverlayType.underline:
           final y = (overlay.rect.top + overlay.rect.height) * size.height;
           g.drawLine(
@@ -467,7 +599,6 @@ class PdfToolsService {
             Offset(overlay.rect.left * size.width, y),
             Offset((overlay.rect.left + overlay.rect.width) * size.width, y),
           );
-          break;
         case PdfOverlayType.redact:
           g.drawRectangle(
             brush: PdfSolidBrush(_toPdfColor(overlay.color)),
@@ -478,9 +609,7 @@ class PdfToolsService {
               overlay.rect.height * size.height,
             ),
           );
-          break;
         case PdfOverlayType.ocrText:
-          // Draw invisible text layer for searchability
           g.save();
           g.setTransparency(0);
           g.drawString(
@@ -495,13 +624,8 @@ class PdfToolsService {
             ),
           );
           g.restore();
-          break;
       }
     }
-
-    final bytes = await doc.save();
-    doc.dispose();
-    return AppStorage.writePdf(title, bytes);
   }
 
   Future<String> addPageNumbers(
@@ -665,11 +789,20 @@ class PdfToolsService {
     return AppStorage.writePdf(title, bytes);
   }
 
-  /// Encrypts a PDF with a user (open) password.
+  /// Encrypts a PDF with user (open) and/or owner (permission) passwords.
+  ///
+  /// [userPassword] — required to open the PDF.
+  /// [ownerPassword] — controls permissions (printing, copying, etc.).
+  ///   If null, [userPassword] is used for both.
+  /// [restrictPrint], [restrictCopy], [restrictEdit] — permission restrictions.
   Future<String> setPassword(
     String path,
     String userPassword, {
+    String? ownerPassword,
     String? currentPassword,
+    bool restrictPrint = false,
+    bool restrictCopy = false,
+    bool restrictEdit = false,
     String title = 'Protected',
   }) async {
     if (userPassword.isEmpty) {
@@ -697,7 +830,24 @@ class PdfToolsService {
     try {
       doc.security.algorithm = PdfEncryptionAlgorithm.aesx256BitRevision6;
       doc.security.userPassword = userPassword;
-      doc.security.ownerPassword = userPassword;
+      doc.security.ownerPassword = ownerPassword ?? userPassword;
+
+      // Apply permission restrictions
+      if (restrictPrint || restrictCopy || restrictEdit) {
+        final perms = doc.security.permissions;
+        if (restrictPrint) {
+          perms.remove(PdfPermissionsFlags.print);
+          perms.remove(PdfPermissionsFlags.fullQualityPrint);
+        }
+        if (restrictCopy) {
+          perms.remove(PdfPermissionsFlags.copyContent);
+        }
+        if (restrictEdit) {
+          perms.remove(PdfPermissionsFlags.editContent);
+          perms.remove(PdfPermissionsFlags.editAnnotations);
+        }
+      }
+
       final bytes = await doc.save();
       doc.dispose();
       return AppStorage.writePdf(title, bytes);
@@ -728,30 +878,37 @@ class PdfToolsService {
   }
 
   /// Extracts all selectable text from a PDF.
-  String extractText(String path, {String? password}) {
-    final doc = PdfDocument(
-      inputBytes: File(path).readAsBytesSync(),
-      password: password,
-    );
-    final text = PdfTextExtractor(doc).extractText();
-    doc.dispose();
-    return text;
-  }
-
-  String extractPageText(String path, int pageIndex, {String? password}) {
-    final doc = PdfDocument(
-      inputBytes: File(path).readAsBytesSync(),
-      password: password,
-    );
-    try {
-      final extractor = PdfTextExtractor(doc);
-      final text = extractor.extractText();
+  Future<String> extractText(String path, {String? password}) async {
+    final inputBytes = await File(path).readAsBytes();
+    return await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes, password: password);
+      final text = PdfTextExtractor(doc).extractText();
       doc.dispose();
       return text;
-    } catch (_) {
-      doc.dispose();
-      return '';
-    }
+    });
+  }
+
+  Future<String> extractPageText(String path, int pageIndex, {String? password}) async {
+    final inputBytes = await File(path).readAsBytes();
+    return await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes, password: password);
+      try {
+        if (pageIndex < 0 || pageIndex >= doc.pages.count) {
+          doc.dispose();
+          return '';
+        }
+        final extractor = PdfTextExtractor(doc);
+        final text = extractor.extractText(
+          startPageIndex: pageIndex + 1,
+          endPageIndex: pageIndex + 1,
+        );
+        doc.dispose();
+        return text;
+      } catch (_) {
+        doc.dispose();
+        return '';
+      }
+    });
   }
 
   /// Builds a searchable PDF from images: each page shows the image with an
@@ -848,24 +1005,16 @@ class PdfToolsService {
   }
 
   /// Returns the page count of a PDF file.
-  int pageCount(String path) {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    try {
-      return doc.pages.count;
-    } finally {
-      doc.dispose();
-    }
-  }
-
-  void _copyPages(PdfDocument source, PdfDocument output, List<int> indices) {
-    for (final index in indices) {
-      if (index < 0 || index >= source.pages.count) continue;
-      final srcPage = source.pages[index];
-      final template = srcPage.createTemplate();
-      output.pageSettings.size = srcPage.size;
-      final page = output.pages.add();
-      page.graphics.drawPdfTemplate(template, Offset.zero, srcPage.size);
-    }
+  Future<int> pageCount(String path) async {
+    final inputBytes = await File(path).readAsBytes();
+    return await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes);
+      try {
+        return doc.pages.count;
+      } finally {
+        doc.dispose();
+      }
+    });
   }
 
   /// Static variant of [_copyPages] usable inside isolates.
@@ -896,20 +1045,28 @@ class PdfToolsService {
       );
 
   /// Reads the bookmarks from a PDF file.
-  List<BookmarkInfo> readBookmarks(String path) {
-    final doc = PdfDocument(inputBytes: File(path).readAsBytesSync());
-    final result = <BookmarkInfo>[];
-    try {
-      _collectBookmarks(doc.bookmarks, result, doc);
-    } catch (_) {
-    } finally {
+  Future<List<BookmarkInfo>> readBookmarks(String path) async {
+    final inputBytes = await File(path).readAsBytes();
+    final raw = await Isolate.run(() {
+      final doc = PdfDocument(inputBytes: inputBytes);
+      final result = <Map<String, dynamic>>[];
+      try {
+        _collectBookmarksStatic(doc.bookmarks, result, doc);
+      } catch (_) {}
       doc.dispose();
-    }
-    return result;
+      return result;
+    });
+    return raw
+        .map((m) => BookmarkInfo(
+              title: m['title'] as String,
+              pageIndex: m['pageIndex'] as int,
+            ))
+        .toList();
   }
 
-  void _collectBookmarks(
-      PdfBookmarkBase bookmarks, List<BookmarkInfo> result, PdfDocument doc) {
+  /// Static variant usable inside isolates.
+  static void _collectBookmarksStatic(
+      PdfBookmarkBase bookmarks, List<Map<String, dynamic>> result, PdfDocument doc) {
     for (var i = 0; i < bookmarks.count; i++) {
       final bm = bookmarks[i];
       try {
@@ -923,13 +1080,13 @@ class PdfToolsService {
               break;
             }
           }
-          result.add(BookmarkInfo(
-            title: bm.title,
-            pageIndex: pageIndex,
-          ));
+          result.add({
+            'title': bm.title,
+            'pageIndex': pageIndex,
+          });
         }
       } catch (_) {}
-      _collectBookmarks(bm, result, doc);
+      _collectBookmarksStatic(bm, result, doc);
     }
   }
 

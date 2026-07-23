@@ -33,7 +33,7 @@ class _PdfToTextScreenState extends State<PdfToTextScreen> {
       _busy = true;
     });
     try {
-      final text = _service.extractText(path);
+      final text = await _service.extractText(path);
       if (mounted) {
         setState(() {
           _text = text.trim();

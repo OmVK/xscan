@@ -34,7 +34,7 @@ class _FillFormsScreenState extends State<FillFormsScreen> {
     if (path == null) return;
     setState(() => _busy = true);
     try {
-      final fields = _service.readFormFields(path);
+      final fields = await _service.readFormFields(path);
       for (final c in _text.values) {
         c.dispose();
       }

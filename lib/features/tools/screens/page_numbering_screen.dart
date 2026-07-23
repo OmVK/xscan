@@ -59,7 +59,7 @@ class _PageNumberingScreenState extends State<PageNumberingScreen> {
       _path = path;
       _preview = null;
     });
-    final count = _service.pageCount(path);
+    final count = await _service.pageCount(path);
     final page = await _render.renderPage(path, 0, scale: 1.5);
     if (mounted) {
       setState(() {

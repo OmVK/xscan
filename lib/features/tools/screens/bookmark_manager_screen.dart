@@ -29,8 +29,8 @@ class _BookmarkManagerScreenState extends State<BookmarkManagerScreen> {
       _bookmarks.clear();
     });
     try {
-      final count = _toolsService.pageCount(path);
-      final loaded = _toolsService.readBookmarks(path);
+      final count = await _toolsService.pageCount(path);
+      final loaded = await _toolsService.readBookmarks(path);
       if (!mounted) return;
       setState(() {
         _pageCount = count;
@@ -126,8 +126,21 @@ class _BookmarkManagerScreenState extends State<BookmarkManagerScreen> {
     return result;
   }
 
-  void _deleteBookmark(int index) {
-    setState(() => _bookmarks.removeAt(index));
+  Future<void> _deleteBookmark(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete bookmark?'),
+        content: Text('Remove "${_bookmarks[index].title}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      setState(() => _bookmarks.removeAt(index));
+    }
   }
 
   Future<void> _editBookmark(int index) async {

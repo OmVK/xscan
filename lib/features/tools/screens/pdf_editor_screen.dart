@@ -61,7 +61,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _init() async {
     try {
-      _pageCount = _toolsService.pageCount(widget.pdfPath);
+      _pageCount = await _toolsService.pageCount(widget.pdfPath);
       await _loadPage(0);
     } catch (e) {
       if (mounted) {
@@ -306,7 +306,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         onScaleStart: !movable
             ? null
             : (details) {
-                _selected = o;
+                setState(() => _selected = o);
                 _scaleStart = 1.0;
                 _scaleStartRect = o.rect;
               },
@@ -407,6 +407,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 width: 60,
                 height: 32,
                 child: TextField(
+                  key: ValueKey('size_${o.pageIndex}_$currentWidth'),
                   controller: TextEditingController(text: '$currentWidth'),
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
@@ -577,7 +578,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           type: PdfOverlayType.redact,
           pageIndex: _pageIndex,
           rect: r,
-          color: Colors.black,
+          color: _color,
         ));
       }
     }

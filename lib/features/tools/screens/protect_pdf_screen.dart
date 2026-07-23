@@ -16,16 +16,24 @@ class ProtectPdfScreen extends StatefulWidget {
 
 class _ProtectPdfScreenState extends State<ProtectPdfScreen> {
   final _service = PdfToolsService();
-  final _passwordController = TextEditingController();
+  final _userPasswordController = TextEditingController();
+  final _ownerPasswordController = TextEditingController();
+  final _confirmController = TextEditingController();
   final _currentController = TextEditingController();
   String? _path;
   bool _remove = false;
   bool _busy = false;
   bool _obscure = true;
+  bool _useOwnerPassword = false;
+  bool _restrictPrinting = false;
+  bool _restrictCopying = false;
+  bool _restrictEditing = false;
 
   @override
   void dispose() {
-    _passwordController.dispose();
+    _userPasswordController.dispose();
+    _ownerPasswordController.dispose();
+    _confirmController.dispose();
     _currentController.dispose();
     super.dispose();
   }
@@ -46,10 +54,16 @@ class _ProtectPdfScreenState extends State<ProtectPdfScreen> {
       } else {
         out = await _service.setPassword(
           _path!,
-          _passwordController.text,
+          _userPasswordController.text,
+          ownerPassword: _useOwnerPassword && _ownerPasswordController.text.isNotEmpty
+              ? _ownerPasswordController.text
+              : null,
           currentPassword: _currentController.text.isEmpty
               ? null
               : _currentController.text,
+          restrictPrint: _restrictPrinting,
+          restrictCopy: _restrictCopying,
+          restrictEdit: _restrictEditing,
         );
       }
       if (!mounted) return;
@@ -67,14 +81,19 @@ class _ProtectPdfScreenState extends State<ProtectPdfScreen> {
   bool get _canRun {
     if (_path == null || _busy) return false;
     if (_remove) return _currentController.text.isNotEmpty;
-    return _passwordController.text.length >= 4;
+    if (_userPasswordController.text.length < 4) return false;
+    if (_userPasswordController.text != _confirmController.text) return false;
+    if (_useOwnerPassword && _ownerPasswordController.text.isEmpty) return false;
+    return true;
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Protect PDF')),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -112,12 +131,14 @@ class _ProtectPdfScreenState extends State<ProtectPdfScreen> {
                 ),
               )
             else ...[
+              // User (open) password
               TextField(
-                controller: _passwordController,
+                controller: _userPasswordController,
                 obscureText: _obscure,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  labelText: 'New password (min 4 chars)',
+                  labelText: 'Open password (min 4 chars)',
+                  helperText: 'Required to open the PDF',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -126,6 +147,85 @@ class _ProtectPdfScreenState extends State<ProtectPdfScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              // Confirm password
+              TextField(
+                controller: _confirmController,
+                obscureText: true,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Confirm password',
+                  errorText: _confirmController.text.isNotEmpty &&
+                          _confirmController.text != _userPasswordController.text
+                      ? 'Passwords do not match'
+                      : null,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Owner password toggle
+              SwitchListTile(
+                title: const Text('Set owner password'),
+                subtitle: const Text('Controls permissions (print, copy, edit)',
+                    style: TextStyle(fontSize: 12)),
+                value: _useOwnerPassword,
+                onChanged: (v) => setState(() => _useOwnerPassword = v),
+                contentPadding: EdgeInsets.zero,
+              ),
+              if (_useOwnerPassword) ...[
+                TextField(
+                  controller: _ownerPasswordController,
+                  obscureText: true,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Owner password',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // Permission restrictions
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Restrictions',
+                          style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        title: const Text('Restrict printing'),
+                        value: _restrictPrinting,
+                        onChanged: (v) =>
+                            setState(() => _restrictPrinting = v ?? false),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Restrict copying'),
+                        value: _restrictCopying,
+                        onChanged: (v) =>
+                            setState(() => _restrictCopying = v ?? false),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Restrict editing'),
+                        value: _restrictEditing,
+                        onChanged: (v) =>
+                            setState(() => _restrictEditing = v ?? false),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Current password (if already protected)
               const SizedBox(height: 12),
               TextField(
                 controller: _currentController,

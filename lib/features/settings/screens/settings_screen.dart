@@ -52,11 +52,51 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<String?> _promptPassword(BuildContext context, {String? hint}) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Backup Password'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            labelText: 'Password',
+            hintText: hint,
+          ),
+          autofocus: true,
+          onSubmitted: (_) => Navigator.pop(context, controller.text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    return result?.trim().isEmpty == true ? null : result?.trim();
+  }
+
   Future<void> _backup(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+
+    // Ask for optional encryption password
+    final password = await _promptPassword(
+      context,
+      hint: 'Leave empty for unencrypted',
+    );
+    if (!context.mounted) return;
+
     messenger.showSnackBar(const SnackBar(content: Text('Creating backup...')));
     try {
-      final zipPath = await BackupService.createBackup();
+      final zipPath = await BackupService.createBackup(password: password);
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(zipPath)],
@@ -79,14 +119,21 @@ class SettingsScreen extends ConsumerWidget {
     );
     if (!confirmed || !context.mounted) return;
 
-    const group = XTypeGroup(label: 'Backup', extensions: ['zip']);
+    const group = XTypeGroup(label: 'Backup', extensions: ['zip', 'enc']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null || !context.mounted) return;
+
+    // If encrypted file, prompt for password
+    String? password;
+    if (file.path.endsWith('.enc')) {
+      password = await _promptPassword(context, hint: 'Enter backup password');
+      if (!context.mounted) return;
+    }
 
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(const SnackBar(content: Text('Restoring...')));
     try {
-      await BackupService.restoreBackup(file.path);
+      await BackupService.restoreBackup(file.path, password: password);
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
