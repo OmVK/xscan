@@ -72,14 +72,20 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _loadPage(int index) async {
     setState(() => _loading = true);
-    final rendered = await _renderService.renderPage(widget.pdfPath, index);
-    if (!mounted) return;
-    setState(() {
-      _pageIndex = index;
-      _page = rendered;
-      _loading = false;
-      _selected = null;
-    });
+    try {
+      final rendered = await _renderService.renderPage(widget.pdfPath, index);
+      if (!mounted) return;
+      setState(() {
+        _pageIndex = index;
+        _page = rendered;
+        _loading = false;
+        _selected = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _snack('Failed to render page: $e');
+    }
   }
 
   List<PdfOverlay> get _pageOverlays =>

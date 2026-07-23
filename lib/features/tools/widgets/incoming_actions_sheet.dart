@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:xscan/core/services/file_import_service.dart';
 import 'package:xscan/core/services/incoming_share_service.dart';
 import 'package:xscan/core/services/pdf_tools_service.dart';
 import 'package:xscan/features/tools/screens/pdf_editor_screen.dart';
@@ -11,12 +12,23 @@ Future<void> showIncomingActions(
   List<IncomingFile> files,
 ) async {
   if (files.isEmpty) return;
-  final pdfs = files.where((f) => f.isPdf).map((f) => f.path).toList();
+  final rawPdfs = files.where((f) => f.isPdf).map((f) => f.path).toList();
   final images = files.where((f) => !f.isPdf).map((f) => f.path).toList();
+
+  // Persist shared files into app storage (content:// URIs from Android share
+  // intents are not real filesystem paths and cannot be opened by Dart's File).
+  final pdfs = await Future.wait(rawPdfs.map((p) async {
+    try {
+      return await FileImportService.copyIntoStorage(p);
+    } catch (_) {
+      return p;
+    }
+  }));
 
   // Opening a single PDF (e.g. from a browser download / file manager) jumps
   // straight into the full editor with the sign / text / highlight / draw tools.
   if (pdfs.length == 1 && images.isEmpty) {
+    if (!context.mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -26,6 +38,7 @@ Future<void> showIncomingActions(
     return;
   }
 
+  if (!context.mounted) return;
   await showModalBottomSheet(
     context: context,
     builder: (ctx) => SafeArea(
