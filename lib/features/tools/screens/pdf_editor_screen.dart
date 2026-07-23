@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:signature/signature.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
@@ -87,7 +86,6 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       _overlays.where((o) => o.pageIndex == _pageIndex).toList();
 
   void _snack(String msg) {
-    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -1102,7 +1100,10 @@ class _SignaturePadState extends State<_SignaturePad> {
                     Navigator.pop(context);
                     return;
                   }
-                  final bytes = await _controller.toPngBytes();
+                  Uint8List? bytes;
+                  try {
+                    bytes = await _controller.toPngBytes();
+                  } catch (_) {}
                   if (context.mounted) Navigator.pop(context, bytes);
                 },
                 child: const Text('Add'),

@@ -70,6 +70,15 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         final newText = await ocrService.extractTextFromImage(newImagePath);
         ocrService.dispose();
         
+        if (newText == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('OCR failed for this image')),
+            );
+          }
+          return;
+        }
+        
         // Update document
         widget.document.additionalFilePaths = [
           ...?widget.document.additionalFilePaths,

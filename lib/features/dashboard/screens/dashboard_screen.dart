@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -920,7 +919,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     await ref.read(isarServiceProvider).emptyTrash();
     if (!mounted) return;
     const msg = 'Trash emptied';
-    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
+    sendAnnouncement(context, msg);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text(msg)));
   }
@@ -1035,7 +1034,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     await ref.read(isarServiceProvider).saveDocument(doc);
     if (!mounted) return;
     const msg = 'Saved edited image to library';
-    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
+    sendAnnouncement(context, msg);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text(msg)),
     );

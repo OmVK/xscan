@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -440,47 +439,61 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
 
   Future<ui.Image?> _decodeLogo() async {
     if (_logoBytes == null) return null;
-    final codec = await ui.instantiateImageCodec(_logoBytes!);
-    final frame = await codec.getNextFrame();
-    return frame.image;
+    try {
+      final codec = await ui.instantiateImageCodec(_logoBytes!);
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<ui.Image?> _decodeBgImage() async {
     if (_bgImageBytes == null) return null;
-    final codec = await ui.instantiateImageCodec(_bgImageBytes!);
-    final frame = await codec.getNextFrame();
-    return frame.image;
+    try {
+      final codec = await ui.instantiateImageCodec(_bgImageBytes!);
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
   }
 
-  Future<ui.Image> _renderQrMatrix() async {
-    final logo = await _decodeLogo();
-    // When gradient is active, render with white on transparent so we can
-    // apply the gradient shader in the compositing step.
-    final qrColor = (_useGradient && _activeGradient != null)
-        ? Colors.white
-        : _fg;
-    final painter = QrPainter(
-      data: _data,
-      version: QrVersions.auto,
-      gapless: true,
-      eyeStyle: QrEyeStyle(eyeShape: _design.eyeShape, color: qrColor),
-      dataModuleStyle: QrDataModuleStyle(
-          dataModuleShape: _design.dataShape, color: qrColor),
-      embeddedImage: logo,
-      embeddedImageStyle: logo == null
-          ? null
-          : QrEmbeddedImageStyle(
-              size: Size(
-                220 * _logoSize / 0.22,
-                220 * _logoSize / 0.22,
+  Future<ui.Image?> _renderQrMatrix() async {
+    try {
+      final logo = await _decodeLogo();
+      final qrColor = (_useGradient && _activeGradient != null)
+          ? Colors.white
+          : _fg;
+      final painter = QrPainter(
+        data: _data,
+        version: QrVersions.auto,
+        gapless: true,
+        eyeStyle: QrEyeStyle(eyeShape: _design.eyeShape, color: qrColor),
+        dataModuleStyle: QrDataModuleStyle(
+            dataModuleShape: _design.dataShape, color: qrColor),
+        embeddedImage: logo,
+        embeddedImageStyle: logo == null
+            ? null
+            : QrEmbeddedImageStyle(
+                size: Size(
+                  220 * _logoSize / 0.22,
+                  220 * _logoSize / 0.22,
+                ),
               ),
-            ),
-    );
-    return painter.toImage(1024);
+      );
+      return painter.toImage(1024);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _pickLogo() async {
-    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+    );
     if (file == null) return;
     final bytes = await file.readAsBytes();
     if (!mounted) return;
@@ -488,7 +501,11 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   }
 
   Future<void> _pickBackgroundImage() async {
-    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2048,
+      maxHeight: 2048,
+    );
     if (file == null) return;
     final bytes = await file.readAsBytes();
     if (!mounted) return;
@@ -506,72 +523,73 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   }
 
   Future<List<int>?> _pngBytes() async {
-    final qrImage = await _renderQrMatrix();
-    final bgImg = await _decodeBgImage();
-    final size = _exportSize;
-    final pad = _includeQuietZone ? size * 0.06 : 0.0;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
+    try {
+      final qrImage = await _renderQrMatrix();
+      if (qrImage == null) return null;
+      final bgImg = await _decodeBgImage();
+      final size = _exportSize;
+      final pad = _includeQuietZone ? size * 0.06 : 0.0;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
 
-    // Draw background
-    if (bgImg != null) {
-      // Crop/fit background image to QR size
-      paintImage(
-        canvas: canvas,
-        rect: const Rect.fromLTWH(0, 0, 0, 0).inflate(size / 2),
-        image: bgImg,
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-      );
-      // Add semi-transparent overlay for readability
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, size, size),
-        Paint()..color = Colors.white.withValues(alpha: 0.15),
-      );
-    } else {
-      final bgPaint = Paint()..color = _bg;
-      final drawRect = Rect.fromLTWH(0, 0, size, size);
-      if (_design.roundedFrame) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(drawRect, Radius.circular(size * 0.08)),
-          bgPaint,
+      if (bgImg != null) {
+        paintImage(
+          canvas: canvas,
+          rect: const Rect.fromLTWH(0, 0, 0, 0).inflate(size / 2),
+          image: bgImg,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+        );
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, size, size),
+          Paint()..color = Colors.white.withValues(alpha: 0.15),
         );
       } else {
-        canvas.drawRect(drawRect, bgPaint);
+        final bgPaint = Paint()..color = _bg;
+        final drawRect = Rect.fromLTWH(0, 0, size, size);
+        if (_design.roundedFrame) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(drawRect, Radius.circular(size * 0.08)),
+            bgPaint,
+          );
+        } else {
+          canvas.drawRect(drawRect, bgPaint);
+        }
       }
-    }
 
-    // Draw QR code on top (with gradient if active)
-    final qrRect = Rect.fromLTWH(pad, pad, size - pad * 2, size - pad * 2);
-    if (_useGradient && _activeGradient != null && _activeGradient!.length >= 2) {
-      final qrPaint = Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(qrRect.left, qrRect.top),
-          Offset(qrRect.right, qrRect.bottom),
-          _activeGradient!,
-        )
-        ..blendMode = BlendMode.srcIn;
-      canvas.saveLayer(qrRect, qrPaint);
-      paintImage(
-        canvas: canvas,
-        rect: qrRect,
-        image: qrImage,
-        fit: BoxFit.contain,
-      );
-      canvas.restore();
-    } else {
-      paintImage(
-        canvas: canvas,
-        rect: qrRect,
-        image: qrImage,
-        fit: BoxFit.contain,
-      );
-    }
+      final qrRect = Rect.fromLTWH(pad, pad, size - pad * 2, size - pad * 2);
+      if (_useGradient && _activeGradient != null && _activeGradient!.length >= 2) {
+        final qrPaint = Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(qrRect.left, qrRect.top),
+            Offset(qrRect.right, qrRect.bottom),
+            _activeGradient!,
+          )
+          ..blendMode = BlendMode.srcIn;
+        canvas.saveLayer(qrRect, qrPaint);
+        paintImage(
+          canvas: canvas,
+          rect: qrRect,
+          image: qrImage,
+          fit: BoxFit.contain,
+        );
+        canvas.restore();
+      } else {
+        paintImage(
+          canvas: canvas,
+          rect: qrRect,
+          image: qrImage,
+          fit: BoxFit.contain,
+        );
+      }
 
-    final picture = recorder.endRecording();
-    final image = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(size.toInt(), size.toInt());
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _save() async {
@@ -581,7 +599,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     final path = await AppStorage.writeExport('qr_${sizeLabel}px.png', bytes);
     if (!mounted) return;
     final msg = 'Saved: $path';
-    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
   }
@@ -886,7 +903,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
               child: TextButton.icon(
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: _data));
-                  SemanticsService.sendAnnouncement(View.of(context), 'Content copied', TextDirection.ltr);
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Content copied')));
                 },

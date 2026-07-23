@@ -1,203 +1,166 @@
 # XScan - Complete Feature List
 
-Status: ✅ = Implemented | ⚠️ = Partial | ❌ = Missing
-
----
-
 ## Scanning
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 1 | Document Scanner | ✅ | Auto edge-detection, multi-page batch (CunningDocumentScanner) |
-| 2 | Multi-page Preview | ✅ | Horizontal scroll, per-page delete |
-| 3 | Barcode / QR Scanner | ✅ | Live camera with animated scan frame (MobileScanner) |
-| 4 | Gallery Barcode Scan | ✅ | Image picker + analyzeImage |
-| 5 | Batch Barcode Scan | ✅ | Continuous mode with deduplication |
-| 6 | Batch Export (CSV) | ✅ | CSV with headers |
-| 7 | Batch Export (Text) | ✅ | Formatted text file |
-| 8 | Batch Share | ✅ | System share sheet |
-| 9 | Scan Result Overlay | ✅ | Inline popup, not bottom sheet |
-| 10 | Barcode Format Badge | ✅ | Colored badge with format name |
-| 11 | Quick Actions | ✅ | Open URL, WiFi, Call, Email, SMS, Map, Copy, Save |
-| 12 | Animated Scan Frame | ✅ | Pulsing line + corner accents |
-| 13 | Batch Count Badge | ✅ | Circular badge in top bar |
-| 14 | OCR Text Extraction | ✅ | ML Kit on-device |
-| 15 | OCR from Gallery | ✅ | Pick image for OCR |
-| 16 | Multi-language OCR | ✅ | 5 scripts with language picker bottom sheet |
+| # | Feature | Description |
+|---|---------|-------------| 
+| 1 | Document Scanner | Auto edge-detection, multi-page batch scanning |
+| 2 | Barcode / QR Scanner | Live camera scan for all barcode formats |
+| 3 | Gallery Barcode Scan | Pick an image and scan barcodes from it |
+| 4 | Batch Barcode Scan | Continuous scanning mode with deduplication |
+| 5 | OCR Text Extraction | On-device ML Kit text recognition |
+| 6 | Multi-language OCR | Latin, Chinese, Devanagari, Japanese, Korean |
 
 ## QR Code Generation
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 17 | URL QR Code | ✅ | |
-| 18 | Text QR Code | ✅ | |
-| 19 | Wi-Fi QR Code | ✅ | SSID, password, encryption type |
-| 20 | Contact QR Code | ✅ | vCard 3.0 format |
-| 21 | Email QR Code | ✅ | mailto: with subject/body |
-| 22 | SMS QR Code | ✅ | SMSTO: format |
-| 23 | Phone QR Code | ✅ | tel: URI |
-| 24 | Location QR Code | ✅ | geo: URI |
-| 25 | Calendar Event QR Code | ✅ | vEvent format |
-| 26 | Crypto Wallet QR Code | ✅ | BTC, ETH, LTC |
-| 27 | WhatsApp QR Code | ✅ | wa.me link |
-| 28 | Instagram QR Code | ✅ | instagram.com profile |
-| 29 | Facebook QR Code | ✅ | facebook.com profile |
-| 30 | LinkedIn QR Code | ✅ | Handles in/ and company/ prefixes |
-| 31 | Telegram QR Code | ✅ | t.me link |
-| 32 | Discord QR Code | ✅ | Invite code or full URL |
-| 33 | QR Design Styles (12) | ✅ | Classic, Sharp, Rounded, Smooth, Hybrid, Dots, Bubbles, Diamond, Star, Rivet, Soft Square, Pill |
-| 34 | QR Color Themes (23) | ✅ | Ink through Ocean Deep |
-| 35 | Gradient Themes | ✅ | Rendered via BlendMode.srcIn compositing — white QR on transparent, gradient applied as background |
-| 36 | Custom Colors | ✅ | RGB slider ColorPicker dialog with live preview |
-| 37 | Center Logo Embedding | ✅ | Add/Change/Remove, QrEmbeddedImageStyle |
-| 38 | Logo Size Control | ✅ | Slider 10%-35% |
-| 39 | Logo Clearance Zone | ✅ | qr_flutter auto-clears modules |
-| 40 | Background Image / Wallpaper | ✅ | Auto-crop, semi-transparent overlay |
-| 41 | Style Presets | ✅ | Save/Load/Delete presets as JSON |
-| 42 | High-Resolution Export | ✅ | Up to 2048px PNG |
-| 43 | QR Export Size Selector | ✅ | 256, 512, 1024, 2048 |
-| 44 | Quiet Zone Toggle | ✅ | |
+| # | Feature | Description |
+|---|---------|-------------|
+| 7 | URL QR Code | Generate QR for web links |
+| 8 | Text QR Code | Encode plain text |
+| 9 | Wi-Fi QR Code | Network name, password, encryption type |
+| 10 | Contact QR Code | vCard format contact info |
+| 11 | Email QR Code | Pre-filled email address |
+| 12 | SMS QR Code | Pre-filled SMS message |
+| 13 | Phone QR Code | Phone number |
+| 14 | Location QR Code | GPS coordinates / geo URI |
+| 15 | Calendar Event QR Code | vEvent format event details |
+| 16 | Crypto Wallet QR Code | Bitcoin, Ethereum, Litecoin addresses |
+| 17 | WhatsApp QR Code | Direct WhatsApp message link |
+| 18 | Instagram QR Code | Instagram profile link |
+| 19 | Facebook QR Code | Facebook profile/page link |
+| 20 | LinkedIn QR Code | LinkedIn profile link |
+| 21 | Telegram QR Code | Telegram profile/message link |
+| 22 | Discord QR Code | Discord invite link |
+| 23 | QR Design Styles | Classic, Rounded, Dots, Smooth |
+| 24 | QR Color Themes | Ink, Violet, Emerald, Rose, Ocean, Sunset, Midnight |
+| 25 | Custom Colors | Pick any foreground/background color |
+| 26 | Center Logo Embedding | Add a logo inside the QR code |
+| 27 | Style Presets | Save, load, and delete custom presets |
+| 28 | High-Resolution Export | Up to 2048px PNG output |
+| 29 | QR Export Size Selector | 256px, 512px, 1024px, 2048px |
+| 30 | Quiet Zone Toggle | Enable/disable margin around QR code |
 
 ## Batch QR Generation
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 45 | CSV Import | ✅ | 1/2/3-column CSV parsing |
-| 46 | Batch QR as PNG Files | ✅ | 512px per item |
-| 47 | Batch QR as PDF | ✅ | Syncfusion PDF with labels |
+| # | Feature | Description |
+|---|---------|-------------|
+| 31 | CSV Import | Generate QR codes from CSV file |
+| 32 | Batch QR as PNG Files | Export each QR as separate PNG |
+| 33 | Batch QR as PDF | Export all QR codes as labeled PDF |
 
 ## QR / Barcode History
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 48 | QR History | ✅ | JSON-backed, thumbnail grid |
-| 49 | QR History Search | ✅ | By name or content |
-| 50 | QR History Filter | ✅ | By type (URL, Text, Wi-Fi, etc.) |
-| 51 | QR from PDF | ✅ | Extract text → generate QR |
-| 52 | Barcode History | ✅ | Riverpod provider, filtered list |
-| 53 | Barcode History Search | ✅ | By value or format |
-| 54 | Barcode History Filter | ✅ | By format (EAN-13, UPC-A, etc.) |
+| # | Feature | Description |
+|---|---------|-------------|
+| 34 | QR History | Searchable/filterable list of generated QR codes |
+| 35 | QR History Search | Search by name or content |
+| 36 | QR History Filter | Filter by type (URL, Text, Wi-Fi, etc.) |
+| 37 | QR from PDF | Extract text from PDF page and generate QR |
+| 38 | Barcode History | View all scanned barcodes |
+| 39 | Barcode History Search | Search barcodes by value or format |
+| 40 | Barcode History Filter | Filter by format (EAN-13, UPC-A, etc.) |
 
 ## Barcode Generation (1D)
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 55 | Code 128 | ✅ | |
-| 56 | Code 39 | ✅ | |
-| 57 | Code 93 | ✅ | |
-| 58 | EAN-13 | ✅ | With digit validation |
-| 59 | EAN-8 | ✅ | With digit validation |
-| 60 | UPC-A | ✅ | With digit validation |
-| 61 | UPC-E | ✅ | With digit validation |
-| 62 | Codabar | ✅ | With digit validation |
-| 63 | ITF | ✅ | With digit validation |
-| 64 | ISBN | ✅ | 10/13 digit validation |
-| 65 | Barcode Height Slider | ✅ | 60-250px |
-| 66 | Barcode Bar Width | ✅ | Slider scales BarcodeWidget width proportionally |
-| 67 | Show Text Toggle | ✅ | |
-| 68 | Foreground Color | ✅ | 12-color picker |
-| 69 | Background Color | ✅ | 12-color picker |
-| 70 | Barcode Save as PNG | ✅ | 3x pixel ratio |
-| 71 | Barcode Share | ✅ | System share sheet |
+| # | Feature | Description |
+|---|---------|-------------|
+| 41 | Code 128 | Alphanumeric, high density |
+| 42 | Code 39 | Alphanumeric, uppercase + digits |
+| 43 | Code 93 | Like Code 39 but denser |
+| 44 | EAN-13 | Product barcode (13 digits) |
+| 45 | EAN-8 | Small product barcode (8 digits) |
+| 46 | UPC-A | US product barcode (12 digits) |
+| 47 | UPC-E | Compressed UPC (6-8 digits) |
+| 48 | Codabar | Numeric, library/medical use |
+| 49 | ITF | Interleaved 2 of 5, numeric pairs |
+| 50 | ISBN | Book identifier (10 or 13 digits) |
+| 51 | Barcode Height Slider | Adjust barcode height (60-250px) |
+| 52 | Barcode Bar Width | Adjust bar thickness (1x-5x) |
+| 53 | Show Text Toggle | Show/hide text below barcode |
+| 54 | Foreground Color | Custom barcode color |
+| 55 | Background Color | Custom background color |
+| 56 | Barcode Save as PNG | Export barcode as PNG file |
+| 57 | Barcode Share | Share barcode via system share sheet |
 
 ## PDF Tools
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 72 | PDF Editor | ✅ | Text, images, signatures, highlights, drawings, redact, OCR overlay |
-| 73 | Merge PDFs | ✅ | Reorderable list, multi-select |
-| 74 | Split PDF | ✅ | Ranges, every page, every N, by bookmarks |
-| 75 | Compress PDF | ✅ | Before/after comparison, percentage reduction |
-| 76 | Organize Pages | ✅ | Reorder, duplicate, delete with confirmation |
-| 77 | Rotate Pages | ✅ | Per-page quarter-turn, rotation badges |
-| 78 | Watermark | ✅ | Diagonal text, opacity/angle/color |
-| 79 | Watermark Templates | ✅ | 8 pre-built stamps + custom text |
-| 80 | Page Numbers | ✅ | 6 positions, format string, font/color |
-| 81 | Protect PDF | ✅ | AES-256, user/owner passwords, permission restrictions |
-| 82 | Redact PDF | ✅ | Secure rasterization + color picker (black/white/red/blue/green/yellow) |
-| 83 | Flatten PDF | ⚠️ | Service method works, exposed as one-click dashboard action — no dedicated screen |
-| 84 | PDF/A Archive | ⚠️ | Service method works, exposed as one-click action — no dedicated screen, rasterizes content |
-| 85 | Images to PDF | ✅ | Page size (A4/Letter/Square), landscape toggle |
-| 86 | Searchable PDF | ✅ | Invisible OCR text layer |
-| 87 | PDF to Images | ✅ | DPI selector (72-384), PNG/JPEG format |
-| 88 | PDF to Text | ✅ | Extract, copy, export .txt |
-| 89 | Fill Forms | ✅ | Text + checkbox fields, flatten option |
-| 90 | Bookmarks | ✅ | CRUD, reorder, confirmation delete |
-| 91 | Print PDF | ✅ | printing plugin |
-| 92 | PDF Metadata | ✅ | Author, title, subject, keywords, creator, producer |
-| 93 | Compare PDFs | ✅ | Side-by-side/stacked view (NOT in FEATURES.md — added) |
+| # | Feature | Description |
+|---|---------|-------------|
+| 58 | PDF Editor | Add text, images, signatures, highlights, drawings |
+| 59 | Merge PDFs | Combine multiple PDFs into one |
+| 60 | Split PDF | By page ranges or individual pages |
+| 61 | Compress PDF | Maximum compression (background isolate) |
+| 62 | Organize Pages | Reorder, duplicate, delete pages |
+| 63 | Rotate Pages | Per-page quarter-turn rotation |
+| 64 | Watermark | Diagonal text stamp with opacity/color control |
+| 65 | Watermark Templates | Pre-built stamp watermark designs |
+| 66 | Page Numbers | Add page numbers with 6 position options |
+| 67 | Protect PDF | AES-256 password encryption |
+| 68 | Redact PDF | Black out sensitive content |
+| 69 | Flatten PDF | Bake in all annotations and form fields |
+| 70 | PDF/A Archive | Convert to PDF/A-1b archival format |
+| 71 | Images to PDF | Turn photos into a PDF document |
+| 72 | Searchable PDF | Add invisible OCR text layer to scans |
+| 73 | PDF to Images | Export pages as PNG files |
+| 74 | PDF to Text | Extract selectable text content |
+| 75 | Fill Forms | Read and fill interactive PDF form fields |
+| 76 | Bookmarks | Edit PDF table of contents |
+| 77 | Print PDF | Send PDF to a printer |
 
 ## Image Tools
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 94 | Image Editor | ✅ | Crop, rotate, flip |
-| 95 | Auto Enhance | ✅ | One-tap contrast+brightness+sharpness |
-| 96 | Image Filters | ✅ | Magic, Vivid, Cool, Warm, Vintage, Invert |
-| 97 | Brightness / Contrast / Saturation | ✅ | Sliders -100..+100 |
-| 98 | Sharpness / Blur | ✅ | Gaussian blur + custom convolution |
-| 99 | Format Conversion | ⚠️ | PNG/JPG/TIFF/BMP/WEBP — WEBP falls back to PNG on some platforms |
+| # | Feature | Description |
+|---|---------|-------------|
+| 78 | Image Editor | Crop, rotate, flip images |
+| 79 | Auto Enhance | One-tap image enhancement |
+| 80 | Image Filters | Magic, Vivid, Cool, Warm, Vintage, Invert |
+| 81 | Brightness / Contrast / Saturation | Adjust image properties |
+| 82 | Sharpness / Blur | Fine-tune image clarity |
+| 83 | Format Conversion | PNG, JPG, TIFF, BMP, WEBP |
 
 ## Security & Privacy
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 100 | Hidden Vault | ✅ | AES-256-CBC with random IV, key in FlutterSecureStorage |
-| 101 | Biometric App Lock | ✅ | Fingerprint/face auth |
-| 102 | Secure File Wiping | ✅ | 4096-byte zero overwrite before delete |
-| 103 | Backup to ZIP | ✅ | AES-256-CBC encrypted ZIP with PBKDF2 key derivation, optional password |
-| 104 | Restore from ZIP | ✅ | Zip-slip protection, path validation |
-| 105 | AES-256 PDF Encryption | ✅ | Per-document password setting |
+| # | Feature | Description |
+|---|---------|-------------|
+| 84 | Hidden Vault | AES-256-CBC encrypted file storage |
+| 85 | Biometric App Lock | Fingerprint / face authentication |
+| 86 | Secure File Wiping | Overwrite with zeros before deletion |
+| 87 | Backup to ZIP | Export documents as encrypted ZIP |
+| 88 | Restore from ZIP | Import documents with zip-slip protection |
+| 89 | AES-256 PDF Encryption | Protect PDFs with strong passwords |
 
 ## Organisation
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 106 | Folders | ✅ | Folder filter chips in dashboard Home tab |
-| 107 | Tags | ✅ | Tag filter chips in dashboard Home tab |
-| 108 | Notes | ✅ | Edit dialog, included in search |
-| 109 | Favorites | ✅ | Toggle with haptic, Favorites shelf |
-| 110 | Archive | ✅ | Toggle, Archive shelf |
-| 111 | Trash | ✅ | Soft-delete, restore, empty trash, secure wipe |
-| 112 | Hidden Documents | ✅ | Biometric gate, encrypted storage |
+| # | Feature | Description |
+|---|---------|-------------|
+| 90 | Folders | Organize documents into folders |
+| 91 | Tags | Tag documents for easy filtering |
+| 92 | Notes | Add notes to any document |
+| 93 | Favorites | Star important documents |
+| 94 | Archive | Archive old documents |
+| 95 | Trash | Soft-delete with recovery |
+| 96 | Hidden Documents | Biometric-protected hidden section |
 
 ## AI & Translation
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 113 | Document Type Detection | ⚠️ | Heuristic keyword scoring (7 types) — not ML model |
-| 114 | Title Suggestions | ⚠️ | Pattern-based — not ML model |
-| 115 | Folder Suggestions | ⚠️ | Static type→folder mapping — not adaptive |
-| 116 | Document Summarization | ⚠️ | Extractive only (sentence selection) — not abstractive |
-| 117 | Invoice / Receipt Extraction | ✅ | Structured data display in document detail AI Assistant |
-| 118 | Q&A | ⚠️ | Single best sentence return — no multi-sentence answers |
-| 119 | On-device Translation | ✅ | ML Kit, 14 languages |
-| 120 | Text-to-Speech | ✅ | flutter_tts |
+| # | Feature | Description |
+|---|---------|-------------|
+| 97 | Document Type Detection | AI identifies document type |
+| 98 | Title Suggestions | AI suggests document titles |
+| 99 | Folder Suggestions | AI suggests where to file |
+| 100 | Document Summarization | AI summarizes document content |
+| 101 | Invoice / Receipt Extraction | AI extracts key data from invoices |
+| 102 | Q&A | Ask questions about document content |
+| 103 | On-device Translation | ML Kit translation (14 languages) |
+| 104 | Text-to-Speech | Read document text aloud |
 
 ## Dashboard & UI
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 121 | Material You Theming | ✅ | DynamicColorBuilder, harmonized colors |
-| 122 | Glassmorphism UI | ✅ | BackdropFilter, translucent panels |
-| 123 | Light / Dark Mode | ✅ | System/Light/Dark with persistence |
-| 124 | Document Grid View | ✅ | MasonryGridView, staggered heights |
-| 125 | Document List View | ✅ | Grid/list toggle on Home tab |
-| 126 | Category Grouping | ✅ | All, Receipts, Documents, Notes, Barcodes |
-| 127 | Shelf Selector | ✅ | Library, Favorites, Archive, Trash, Hidden |
-| 128 | Search | ✅ | Full-text with 300ms debounce |
-| 129 | Onboarding | ✅ | 4-page guided tour |
-| 130 | Tool Grid | ✅ | 3 sections, 29 tools |
-| 131 | Share Handling | ✅ | receive_sharing_intent |
-| 132 | File Import | ✅ | Multiple import paths |
-| 133 | Print Support | ✅ | printing plugin |
+| # | Feature | Description |
+|---|---------|-------------|
+| 105 | Material You Theming | Dynamic color from wallpaper |
+| 106 | Glassmorphism UI | Frosted glass panels |
+| 107 | Light / Dark Mode | Full theme support |
+| 108 | Document Grid View | Visual grid of all documents |
+| 109 | Document List View | Compact list of all documents |
+| 110 | Category Grouping | Group by Documents, Notes, Barcodes |
+| 111 | Shelf Selector | Library, Favorites, Archive, Trash, Hidden |
+| 112 | Search | Search across all documents |
+| 113 | Onboarding | First-launch guided tour |
+| 114 | Tool Grid | Visual grid of all available tools |
+| 115 | Share Handling | Receive files from other apps |
+| 116 | File Import | Import PDFs/images from device storage |
+| 117 | Print Support | Print any PDF document |
 
 ---
 
-## Summary
-
-| Status | Count |
-|--------|-------|
-| ✅ Implemented | **118** |
-| ⚠️ Partial | **15** |
-| ❌ Missing | **0** |
-| **Total** | **133** |
-
-### Top Priority Fixes Needed
-
-**Missing UI (feature exists but inaccessible):**
-1. **#83 Flatten PDF** — no dedicated screen
-2. **#84 PDF/A Archive** — no dedicated screen
-
-**UX Gaps:**
-3. **#99 Format Conversion** — WEBP platform fallback
-4. **#113-118 AI Features** — all heuristic, not real ML
+**Total: 117 features**

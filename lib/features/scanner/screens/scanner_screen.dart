@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -763,50 +762,20 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       return;
     }
 
-    // Try Android WiFi settings intent
-    if (Platform.isAndroid) {
-      // Android doesn't have a direct "connect to WiFi" intent that accepts
-      // SSID/password programmatically without special permissions.
-      // The best UX is to copy the SSID+password and open WiFi settings.
-      final text = password != null ? 'SSID: $ssid\nPassword: $password' : 'SSID: $ssid';
-      Clipboard.setData(ClipboardData(text: text));
-      try {
-        // Open WiFi settings
-        final uri = Uri.parse('package:com.android.settings');
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri);
-        } else {
-          // Fallback: open general settings
-          final settingsUri = Uri.parse('package:com.android.settings');
-          await launchUrl(settingsUri);
-        }
-      } catch (_) {
-        // Fallback: just copy to clipboard
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(password != null
-                ? 'WiFi credentials copied. Paste in WiFi settings.'
-                : 'WiFi name copied.'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } else {
-      // iOS — just copy the credentials
-      final text = password != null ? '$ssid\n$password' : ssid;
-      Clipboard.setData(ClipboardData(text: text));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(password != null
-                ? 'WiFi credentials copied. Go to Settings > WiFi to connect.'
-                : 'WiFi name copied.'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+    // Android doesn't have a direct "connect to WiFi" intent that accepts
+    // SSID/password programmatically without special permissions.
+    // The best UX is to copy the SSID+password and open WiFi settings.
+    final creds = password != null ? 'SSID: $ssid\nPassword: $password' : 'SSID: $ssid';
+    Clipboard.setData(ClipboardData(text: creds));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(password != null
+              ? 'WiFi credentials copied. Paste in WiFi settings.'
+              : 'WiFi name copied.'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -1032,7 +1001,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       _seen.clear();
     });
     final msg = 'Saved $count barcodes';
-    SemanticsService.sendAnnouncement(View.of(context), msg, TextDirection.ltr);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -1151,7 +1119,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       final buffer = StringBuffer();
       for (var i = 0; i < persistedPaths.length; i++) {
         final text = await ocrService.extractTextFromImage(persistedPaths[i]);
-        if (text.trim().isEmpty) continue;
+        if (text == null || text.trim().isEmpty) continue;
         if (buffer.isNotEmpty) buffer.write('\n\n--- Page ${i + 1} ---\n\n');
         buffer.write(text);
       }
@@ -1212,6 +1180,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
       if (!mounted) return;
 
+      if (text == null) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('OCR failed - the image could not be processed')),
+        );
+        return;
+      }
       if (text.trim().isEmpty) {
         setState(() => _isProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(

@@ -41,14 +41,17 @@ class OcrService {
     'Korean': TextRecognitionScript.korean,
   };
 
-  Future<String> extractTextFromImage(String imagePath) async {
+  /// Returns the recognized text, or `null` if OCR failed (corrupt image,
+  /// permission error, etc.). An empty string means OCR succeeded but found
+  /// no text.
+  Future<String?> extractTextFromImage(String imagePath) async {
     try {
       final inputImage = InputImage.fromFilePath(imagePath);
       final RecognizedText recognizedText =
           await textRecognizer.processImage(inputImage);
       return recognizedText.text;
     } catch (e) {
-      return '';
+      return null;
     }
   }
 

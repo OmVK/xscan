@@ -1,4 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+
+/// Sends an accessibility announcement via SemanticsService.
+/// Catches errors silently since this uses internal Flutter APIs.
+void sendAnnouncement(BuildContext context, String message) {
+  try {
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      message,
+      TextDirection.ltr,
+    );
+  } catch (_) {}
+}
 
 /// Shows a confirmation dialog and returns true if the user confirmed.
 Future<bool> showConfirmDialog(
