@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xscan/core/data/models/scan_document.dart';
+import 'package:xscan/core/providers/document_provider.dart';
 
 enum BarcodeType {
   code128,
@@ -71,14 +74,14 @@ const _barcodeTypes = <_BarcodeTypeInfo>[
   _BarcodeTypeInfo(BarcodeType.isbn, 'ISBN', 'Book identifier (10 or 13 digits)', _validateIsbn),
 ];
 
-class BarcodeGeneratorScreen extends StatefulWidget {
+class BarcodeGeneratorScreen extends ConsumerStatefulWidget {
   const BarcodeGeneratorScreen({super.key});
 
   @override
-  State<BarcodeGeneratorScreen> createState() => _BarcodeGeneratorScreenState();
+  ConsumerState<BarcodeGeneratorScreen> createState() => _BarcodeGeneratorScreenState();
 }
 
-class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
+class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen> {
   BarcodeType _selectedType = BarcodeType.code128;
   final TextEditingController _textController = TextEditingController();
   final GlobalKey _barcodeKey = GlobalKey();
@@ -148,9 +151,20 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
       final file = File('${dir.path}/barcode_${DateTime.now().millisecondsSinceEpoch}.png');
       await file.writeAsBytes(bytes);
 
+      final info = _barcodeTypes.firstWhere((t) => t.type == _selectedType);
+      final doc = ScanDocument()
+        ..title = 'Generated ${info.label}'
+        ..filePath = file.path
+        ..ocrText = _textController.text.trim()
+        ..dateCreated = DateTime.now()
+        ..category = 'Barcodes'
+        ..fileType = 'barcode'
+        ..barcodeFormat = info.label;
+      await ref.read(isarServiceProvider).saveDocument(doc);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved to ${file.path}')),
+          const SnackBar(content: Text('Saved to Barcodes history!')),
         );
       }
     } catch (e) {

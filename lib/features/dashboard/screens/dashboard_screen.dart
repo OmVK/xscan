@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xscan/core/services/incoming_share_service.dart';
 import 'package:xscan/features/tools/widgets/incoming_actions_sheet.dart';
 
+import 'package:xscan/features/dashboard/widgets/glass_tool_card.dart';
 import 'package:xscan/features/scanner/screens/scanner_screen.dart';
 import 'package:xscan/features/document/screens/document_detail_screen.dart';
 import 'package:xscan/features/settings/screens/settings_screen.dart';
@@ -46,6 +47,9 @@ import 'package:xscan/core/services/pdf_tools_service.dart';
 import 'package:xscan/core/services/biometric_service.dart';
 import 'package:xscan/features/tools/widgets/tool_result_sheet.dart';
 import 'package:xscan/core/widgets/confirm_dialog.dart';
+import 'package:xscan/core/widgets/glass_app_background.dart';
+import 'package:xscan/features/scanner/widgets/ocr_result_sheet.dart';
+import 'package:xscan/features/scanner/services/ocr_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
 
@@ -150,17 +154,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true, // For floating bottom nav
-      extendBodyBehindAppBar: true, // For floating app bar
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(80),
-        child: _buildFloatingAppBar(),
+    return GlassAppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true, // For floating bottom nav
+        extendBodyBehindAppBar: true, // For floating app bar
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(80),
+          child: _buildFloatingAppBar(),
+        ),
+        body: _buildBody(),
+        floatingActionButton: _buildGlowingFAB(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        bottomNavigationBar: _buildGlassBottomNav(),
       ),
-      body: _buildBody(),
-      floatingActionButton: _buildGlowingFAB(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: _buildGlassBottomNav(),
     );
   }
 
@@ -357,16 +364,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildHomeView() {
     final docsAsyncValue = ref.watch(filteredDocumentsProvider);
     final selectedCategory = ref.watch(categoryFilterProvider);
-    // Reset pagination when category filter changes.
     if (selectedCategory != _lastCategory) {
       _lastCategory = selectedCategory;
       _visibleCount = _pageSize;
     }
 
+    final totalDocs = docsAsyncValue.value?.length ?? 0;
+
     return Column(
       children: [
-        // Add top padding to account for floating AppBar + status bar.
         SizedBox(height: _topContentInset),
+        _buildExecutiveHeader(totalDocs),
+        _buildHeroQuickActions(),
+        const SizedBox(height: 4),
         // Filter Chips
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -1314,74 +1324,160 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12, left: 4),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: _onGlass,
-            ),
-          ),
-        ),
+        ToolsSectionHeader(title: title),
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisCount: 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
+          mainAxisSpacing: 14,
+          crossAxisSpacing: 14,
           childAspectRatio: 1.15,
           children: tools.map((tool) {
-            return Semantics(
-              label: 'Tool: ${tool.$2}. ${tool.$3}',
-              button: true,
-              child: GestureDetector(
-                onTap: tool.$4,
-                child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF2B2B36), Color(0xFF1E1E26)],
-                  ),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Icon(
-                      tool.$1,
-                      size: 34,
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
-                    const Spacer(),
-                    Text(
-                      tool.$2,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      tool.$3,
-                      style:
-                          const TextStyle(color: Colors.white54, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              ),
+            return GlassToolCard(
+              icon: tool.$1,
+              title: tool.$2,
+              subtitle: tool.$3,
+              onTap: tool.$4,
             );
           }).toList(),
         ),
       ],
+    );
+  }
+
+  Widget _buildExecutiveHeader(int docsCount) {
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good Morning'
+        : (hour < 18 ? 'Good Afternoon' : 'Good Evening');
+    final icon = hour < 18 ? Icons.wb_sunny_outlined : Icons.nightlight_round_outlined;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFF00E5FF)),
+              const SizedBox(width: 8),
+              Text(
+                '$greeting, Executive',
+                style: TextStyle(
+                  color: _onGlass,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _glassFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _glassBorder),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.folder, size: 13, color: Color(0xFF00E5FF)),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$docsCount Documents',
+                      style: TextStyle(color: _onGlassMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _glassFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _glassBorder),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.verified_user_outlined, size: 13, color: Colors.greenAccent),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Biometric Vault Active',
+                      style: TextStyle(color: _onGlassMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeroQuickActions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          _heroActionItem(Icons.camera_alt, 'Scan Doc', const Color(0xFF00E5FF), () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen()));
+          }),
+          const SizedBox(width: 8),
+          _heroActionItem(Icons.edit_document, 'Edit PDF', const Color(0xFF7C4DFF), () async {
+            final path = await pickInAppPdf(context);
+            if (path != null && mounted) {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => PdfEditorScreen(pdfPath: path)));
+            }
+          }),
+          const SizedBox(width: 8),
+          _heroActionItem(Icons.qr_code_scanner, 'Scan QR', const Color(0xFF00B894), () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen()));
+          }),
+          const SizedBox(width: 8),
+          _heroActionItem(Icons.text_snippet, 'Quick OCR', const Color(0xFFFF9100), () async {
+            final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+            if (file == null || !mounted) return;
+            final ocr = OcrService();
+            final res = await ocr.extractStructured(file.path);
+            ocr.dispose();
+            if (mounted) showOcrResultSheet(context, res);
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroActionItem(IconData icon, String label, Color accentColor, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: _glassFill,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _glassBorder),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: accentColor, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(color: _onGlass, fontSize: 10, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

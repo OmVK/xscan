@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'package:xscan/core/services/file_import_service.dart';
@@ -15,8 +16,6 @@ Future<void> showIncomingActions(
   final rawPdfs = files.where((f) => f.isPdf).map((f) => f.path).toList();
   final images = files.where((f) => !f.isPdf).map((f) => f.path).toList();
 
-  // Persist shared files into app storage (content:// URIs from Android share
-  // intents are not real filesystem paths and cannot be opened by Dart's File).
   final pdfs = await Future.wait(rawPdfs.map((p) async {
     try {
       return await FileImportService.copyIntoStorage(p);
@@ -25,8 +24,6 @@ Future<void> showIncomingActions(
     }
   }));
 
-  // Opening a single PDF (e.g. from a browser download / file manager) jumps
-  // straight into the full editor with the sign / text / highlight / draw tools.
   if (pdfs.length == 1 && images.isEmpty) {
     if (!context.mounted) return;
     await Navigator.push(
@@ -39,74 +36,104 @@ Future<void> showIncomingActions(
   }
 
   if (!context.mounted) return;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final glassColor = isDark
+      ? const Color(0xFF161622).withValues(alpha: 0.88)
+      : Colors.white.withValues(alpha: 0.92);
+  final borderColor = isDark
+      ? Colors.white.withValues(alpha: 0.18)
+      : Colors.black.withValues(alpha: 0.08);
+
   await showModalBottomSheet(
     context: context,
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Imported ${files.length} file(s)',
-              style:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            if (pdfs.length == 1)
-              ListTile(
-                leading: const Icon(Icons.edit_document),
-                title: const Text('Edit & sign'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PdfEditorScreen(pdfPath: pdfs.first),
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    builder: (ctx) => BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: glassColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border.all(color: borderColor, width: 1.2),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                  );
-                },
-              ),
-            if (pdfs.length == 1)
-              ListTile(
-                leading: const Icon(Icons.visibility),
-                title: const Text('Preview / share'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  showPdfResult(context, pdfs.first);
-                },
-              ),
-            if (pdfs.length > 1)
-              ListTile(
-                leading: const Icon(Icons.merge_type),
-                title: Text('Merge ${pdfs.length} PDFs'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await _run(context, () => PdfToolsService().merge(pdfs));
-                },
-              ),
-            if (images.isNotEmpty) ...[
-              ListTile(
-                leading: const Icon(Icons.picture_as_pdf),
-                title: Text('Create PDF from ${images.length} image(s)'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await _run(
-                      context, () => PdfToolsService().imagesToPdf(images));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.manage_search),
-                title: const Text('Create searchable PDF'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await _run(context,
-                      () => PdfToolsService().imagesToSearchablePdf(images));
-                },
-              ),
-            ],
-          ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Imported ${files.length} file(s)',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                if (pdfs.length == 1)
+                  ListTile(
+                    leading: const Icon(Icons.edit_document),
+                    title: const Text('Edit & sign'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PdfEditorScreen(pdfPath: pdfs.first),
+                        ),
+                      );
+                    },
+                  ),
+                if (pdfs.length == 1)
+                  ListTile(
+                    leading: const Icon(Icons.visibility),
+                    title: const Text('Preview / share'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      showPdfResult(context, pdfs.first);
+                    },
+                  ),
+                if (pdfs.length > 1)
+                  ListTile(
+                    leading: const Icon(Icons.merge_type),
+                    title: Text('Merge ${pdfs.length} PDFs'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _run(context, () => PdfToolsService().merge(pdfs));
+                    },
+                  ),
+                if (images.isNotEmpty) ...[
+                  ListTile(
+                    leading: const Icon(Icons.picture_as_pdf),
+                    title: Text('Create PDF from ${images.length} image(s)'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _run(
+                          context, () => PdfToolsService().imagesToPdf(images));
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.manage_search),
+                    title: const Text('Create searchable PDF'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _run(context,
+                          () => PdfToolsService().imagesToSearchablePdf(images));
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     ),

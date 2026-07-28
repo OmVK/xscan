@@ -12,6 +12,7 @@ import 'package:xscan/core/services/pdf_service.dart';
 import 'package:xscan/core/services/ai_service.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/core/providers/settings_provider.dart';
 import 'package:xscan/core/providers/document_provider.dart';
 
@@ -62,7 +63,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
           return;
         }
 
-        final newImagePath = croppedFile.path;
+        final newImagePath = await AppStorage.persistPage(croppedFile.path);
         final scriptKey = ref.read(ocrScriptProvider);
         final script =
             OcrService.scripts[scriptKey] ?? TextRecognitionScript.latin;

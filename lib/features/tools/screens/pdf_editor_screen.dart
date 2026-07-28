@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
@@ -8,9 +9,9 @@ import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/core/services/pdf_render_service.dart';
 import 'package:xscan/core/services/pdf_tools_service.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
-import 'package:xscan/features/tools/services/tool_io.dart';
+import 'package:xscan/features/tools/widgets/tool_result_sheet.dart';
 
-enum _EditMode { move, highlight, draw, redact }
+enum _EditMode { move, highlight, draw, erase, redact }
 
 class PdfEditorScreen extends StatefulWidget {
   final String pdfPath;
@@ -41,9 +42,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   _EditMode _mode = _EditMode.move;
   Color _color = const Color(0xFFFFEB3B); // highlight yellow
-  Color _inkColor = const Color(0xFFE53935);
+  Color _inkColor = const Color(0xFFE53935); // ink red
+  double _strokeWidth = 4.0;
 
-  // In-progress gesture state (normalized).
+  // Real-time live gesture tracking state
+  Offset? _currentTouchLocal;
   Offset? _dragStart;
   Rect? _draftRect;
   List<Offset> _draftPoints = [];
@@ -107,7 +110,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               button: true,
               child: IconButton(
                 tooltip: 'Delete element',
-                icon: const Icon(Icons.delete_outline),
+                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                 onPressed: () {
                   setState(() {
                     _overlays.remove(_selected);
@@ -124,7 +127,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.check),
+                : const Icon(Icons.check, color: Color(0xFF00E5FF)),
             onPressed: _saving ? null : _save,
           ),
         ],
@@ -132,6 +135,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       body: Column(
         children: [
           Expanded(child: _buildCanvas()),
+          if (_mode == _EditMode.draw) _buildStrokeControl(),
           if (_selected != null && _selected!.type != PdfOverlayType.ink)
             _buildSizeControl(),
           _buildPager(),
@@ -158,6 +162,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           w = h * ar;
         }
         final size = Size(w, h);
+
         return Center(
           child: SizedBox(
             width: w,
@@ -167,56 +172,140 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               onTapDown: (d) {
                 if (_mode == _EditMode.move) {
                   setState(() => _selected = null);
+                } else if (_mode == _EditMode.erase) {
+                  final n = _toNorm(d.localPosition, size);
+                  setState(() => _eraseAt(n));
                 }
               },
-              onPanStart: _mode == _EditMode.move ? null : (d) {
-                final n = _toNorm(d.localPosition, size);
+              onPanStart: _mode == _EditMode.move
+                  ? null
+                  : (d) {
+                      final n = _toNorm(d.localPosition, size);
+                      setState(() {
+                        _currentTouchLocal = d.localPosition;
+                        _dragStart = n;
+                        if (_mode == _EditMode.draw) {
+                          _draftPoints = [n];
+                        } else if (_mode == _EditMode.erase) {
+                          _eraseAt(n);
+                        } else {
+                          _draftRect = Rect.fromLTRB(n.dx, n.dy, n.dx, n.dy);
+                        }
+                      });
+                    },
+              onPanUpdate: _mode == _EditMode.move
+                  ? null
+                  : (d) {
+                      final n = _toNorm(d.localPosition, size);
+                      setState(() {
+                        _currentTouchLocal = d.localPosition;
+                        if (_mode == _EditMode.draw) {
+                          _draftPoints = [..._draftPoints, n];
+                        } else if (_mode == _EditMode.erase) {
+                          _eraseAt(n);
+                        } else if (_dragStart != null) {
+                          final minX = _dragStart!.dx < n.dx ? _dragStart!.dx : n.dx;
+                          final maxX = _dragStart!.dx > n.dx ? _dragStart!.dx : n.dx;
+                          final minY = _dragStart!.dy < n.dy ? _dragStart!.dy : n.dy;
+                          final maxY = _dragStart!.dy > n.dy ? _dragStart!.dy : n.dy;
+                          _draftRect = Rect.fromLTRB(minX, minY, maxX, maxY);
+                        }
+                      });
+                    },
+              onPanEnd: _mode == _EditMode.move
+                  ? null
+                  : (_) {
+                      setState(() => _currentTouchLocal = null);
+                      _commitDraft();
+                    },
+              onPanCancel: () {
                 setState(() {
-                  _dragStart = n;
-                  if (_mode == _EditMode.draw) {
-                    _draftPoints = [n];
-                  } else {
-                    _draftRect = Rect.fromLTWH(n.dx, n.dy, 0, 0);
-                  }
+                  _currentTouchLocal = null;
+                  _draftRect = null;
+                  _draftPoints = [];
                 });
               },
-              onPanUpdate: _mode == _EditMode.move ? null : (d) {
-                final n = _toNorm(d.localPosition, size);
-                setState(() {
-                  if (_mode == _EditMode.draw) {
-                    _draftPoints = [..._draftPoints, n];
-                  } else if (_dragStart != null) {
-                    _draftRect = Rect.fromPoints(_dragStart!, n);
-                  }
-                });
-              },
-              onPanEnd: _mode == _EditMode.move ? null : (_) => _commitDraft(),
               child: RepaintBoundary(
                 child: Stack(
+                  clipBehavior: Clip.none,
                   children: [
+                    // PDF Rendered Background Page
                     Positioned.fill(
-                      child: Image.memory(_page!.bytes, fit: BoxFit.fill,
-                          errorBuilder: (_, _, _) =>
-                              const Center(child: Text('Page render failed'))),
+                      child: Image.memory(
+                        _page!.bytes,
+                        fit: BoxFit.fill,
+                        errorBuilder: (_, _, _) =>
+                            const Center(child: Text('Page render failed')),
+                      ),
                     ),
+
+                    // Existing Committed Overlays
                     ..._pageOverlays.map((o) => _buildOverlayWidget(o, size)),
-                    if (_draftRect != null)
-                      RepaintBoundary(
-                        child: Positioned(
-                          left: _draftRect!.left * w,
-                          top: _draftRect!.top * h,
-                          width: _draftRect!.width.abs() * w,
-                          height: _draftRect!.height.abs() * h,
-                          child: Container(
-                            color: _color.withValues(alpha: 0.35),
+
+                    // Real-Time Live Drag Rectangle (Highlight / Redact)
+                    if (_draftRect != null && _mode != _EditMode.move && _mode != _EditMode.draw && _mode != _EditMode.erase)
+                      Positioned(
+                        left: _draftRect!.left * w,
+                        top: _draftRect!.top * h,
+                        width: (_draftRect!.width * w).clamp(2.0, w),
+                        height: (_draftRect!.height * h).clamp(2.0, h),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: _mode == _EditMode.redact
+                                ? Colors.black.withValues(alpha: 0.85)
+                                : _color.withValues(alpha: 0.40),
+                            border: Border.all(
+                              color: _mode == _EditMode.redact
+                                  ? Colors.redAccent
+                                  : _color,
+                              width: 2.0,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         ),
                       ),
+
+                    // Real-Time Live Ink Painting
                     if (_draftPoints.length > 1)
-                      RepaintBoundary(
-                        child: Positioned.fill(
-                          child: CustomPaint(
-                            painter: _InkPainter(_draftPoints, _inkColor, size),
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _InkPainter(
+                            _draftPoints,
+                            _inkColor,
+                            size,
+                            strokeWidth: _strokeWidth,
+                          ),
+                        ),
+                      ),
+
+                    // Real-Time Live Finger Touch Pointer Indicator
+                    if (_currentTouchLocal != null && _mode != _EditMode.move)
+                      Positioned(
+                        left: _currentTouchLocal!.dx - 14,
+                        top: _currentTouchLocal!.dy - 14,
+                        child: IgnorePointer(
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _mode == _EditMode.erase
+                                  ? Colors.red.withValues(alpha: 0.40)
+                                  : (_mode == _EditMode.draw ? _inkColor : _color)
+                                      .withValues(alpha: 0.35),
+                              border: Border.all(
+                                color: _mode == _EditMode.erase
+                                    ? Colors.redAccent
+                                    : Colors.white,
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.35),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -230,11 +319,19 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     );
   }
 
+  void _eraseAt(Offset normPoint) {
+    const targetRadius = 0.06;
+    _overlays.removeWhere((o) {
+      if (o.pageIndex != _pageIndex) return false;
+      return o.rect.inflate(targetRadius).contains(normPoint);
+    });
+  }
+
   Widget _buildOverlayWidget(PdfOverlay o, Size size) {
     final left = o.rect.left * size.width;
     final top = o.rect.top * size.height;
-    final width = o.rect.width * size.width;
-    final height = o.rect.height * size.height;
+    final width = (o.rect.width * size.width).clamp(4.0, size.width);
+    final height = (o.rect.height * size.height).clamp(4.0, size.height);
     final isSelected = identical(o, _selected);
 
     Widget content;
@@ -245,33 +342,44 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           alignment: Alignment.centerLeft,
           child: Text(
             o.text,
-            style: TextStyle(color: o.color, fontSize: o.fontSize),
+            style: TextStyle(
+              color: o.color,
+              fontSize: o.fontSize,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         );
         break;
       case PdfOverlayType.image:
-        content = Image.memory(o.imageBytes!, fit: BoxFit.contain,
-            errorBuilder: (_, _, _) =>
-                Container(color: Colors.grey.shade200));
+        content = Image.memory(
+          o.imageBytes!,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => Container(color: Colors.grey.shade300),
+        );
         break;
       case PdfOverlayType.highlight:
-        content = Container(color: o.color.withValues(alpha: 0.35));
+        content = Container(color: o.color.withValues(alpha: 0.40));
         break;
       case PdfOverlayType.underline:
         content = Align(
           alignment: Alignment.bottomLeft,
-          child: Container(height: 2, width: width, color: o.color),
+          child: Container(height: 3, width: width, color: o.color),
         );
         break;
       case PdfOverlayType.ink:
         content = CustomPaint(
           painter: _InkPainter(
-            o.points.map((p) => Offset(
-                  (p.dx - o.rect.left) / (o.rect.width == 0 ? 1 : o.rect.width),
-                  (p.dy - o.rect.top) / (o.rect.height == 0 ? 1 : o.rect.height),
-                )).toList(),
+            o.points
+                .map((p) => Offset(
+                      (p.dx - o.rect.left) /
+                          (o.rect.width == 0 ? 1 : o.rect.width),
+                      (p.dy - o.rect.top) /
+                          (o.rect.height == 0 ? 1 : o.rect.height),
+                    ))
+                .toList(),
             o.color,
             Size(width, height),
+            strokeWidth: o.strokeWidth,
           ),
         );
         break;
@@ -281,14 +389,19 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       case PdfOverlayType.ocrText:
         content = Container(
           decoration: BoxDecoration(
-            color: Colors.yellow.withValues(alpha: 0.3),
-            border: Border.all(color: Colors.orange, width: 1),
+            color: Colors.yellow.withValues(alpha: 0.35),
+            border: Border.all(color: Colors.orange, width: 1.2),
+            borderRadius: BorderRadius.circular(3),
           ),
           alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.all(2),
+          padding: const EdgeInsets.all(3),
           child: Text(
             o.text,
-            style: TextStyle(color: Colors.black87, fontSize: (o.fontSize * 0.8).clamp(8, 24)),
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: (o.fontSize * 0.85).clamp(9, 26),
+              fontWeight: FontWeight.w500,
+            ),
             maxLines: null,
           ),
         );
@@ -324,16 +437,14 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                   if (_scaleStartRect == null) return;
                   final r = _scaleStartRect!;
                   if (details.scale == 1.0) {
-                    // Single finger — pan
                     final dx = details.focalPointDelta.dx / size.width;
                     final dy = details.focalPointDelta.dy / size.height;
                     o.rect = r.translate(dx, dy);
                     _scaleStartRect = o.rect;
                   } else {
-                    // Multi-finger — scale
                     final factor = details.scale / _scaleStart;
-                    final newW = (r.width * factor).clamp(0.05, 0.95);
-                    final newH = (r.height * factor).clamp(0.05, 0.95);
+                    final newW = (r.width * factor).clamp(0.04, 0.96);
+                    final newH = (r.height * factor).clamp(0.04, 0.96);
                     o.rect = Rect.fromLTWH(
                       r.left + (r.width - newW) / 2,
                       r.top + (r.height - newH) / 2,
@@ -351,8 +462,9 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         child: Container(
           decoration: BoxDecoration(
             border: isSelected
-                ? Border.all(color: Colors.blueAccent, width: 1.5)
+                ? Border.all(color: const Color(0xFF00E5FF), width: 2)
                 : null,
+            borderRadius: BorderRadius.circular(isSelected ? 4 : 0),
           ),
           child: content,
         ),
@@ -360,27 +472,72 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     );
   }
 
+  Widget _buildStrokeControl() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor.withValues(alpha: 0.90),
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.line_weight, size: 18),
+          const SizedBox(width: 8),
+          const Text('Stroke Weight', style: TextStyle(fontSize: 12)),
+          Expanded(
+            child: Slider(
+              value: _strokeWidth,
+              min: 1.0,
+              max: 20.0,
+              divisions: 19,
+              label: '${_strokeWidth.round()} px',
+              onChanged: (v) => setState(() => _strokeWidth = v),
+            ),
+          ),
+          Container(
+            width: _strokeWidth.clamp(4, 20),
+            height: _strokeWidth.clamp(4, 20),
+            decoration: BoxDecoration(
+              color: _inkColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPager() {
-    return Semantics(
-      label: 'Page ${_pageIndex + 1} of $_pageCount',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.chevron_left),
-              onPressed:
-                  _pageIndex > 0 ? () => _loadPage(_pageIndex - 1) : null,
-            ),
-            Text('Page ${_pageIndex + 1} / $_pageCount'),
-            IconButton(
-              icon: const Icon(Icons.chevron_right),
-              onPressed: _pageIndex < _pageCount - 1
-                  ? () => _loadPage(_pageIndex + 1)
-                  : null,
-            ),
-          ],
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glassColor = isDark
+        ? const Color(0xFF161622).withValues(alpha: 0.80)
+        : Colors.white.withValues(alpha: 0.85);
+
+    return ClipRRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          color: glassColor,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _pageIndex > 0 ? () => _loadPage(_pageIndex - 1) : null,
+              ),
+              Text(
+                'Page ${_pageIndex + 1} / $_pageCount',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _pageIndex < _pageCount - 1
+                    ? () => _loadPage(_pageIndex + 1)
+                    : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -389,16 +546,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   Widget _buildSizeControl() {
     final o = _selected!;
     final currentWidth = (o.rect.width * 100).round();
-    return Semantics(
-      label: 'Overlay size',
-      value: '$currentWidth%',
-      child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor),
-        ),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.90),
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -409,42 +561,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               const SizedBox(width: 8),
               const Text('Size', style: TextStyle(fontSize: 13)),
               const Spacer(),
-              SizedBox(
-                width: 60,
-                height: 32,
-                child: TextField(
-                  key: ValueKey('size_${o.pageIndex}_$currentWidth'),
-                  controller: TextEditingController(text: '$currentWidth'),
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    suffixText: '%',
-                  ),
-                  onSubmitted: (v) {
-                    final pct = int.tryParse(v);
-                    if (pct == null || pct < 5 || pct > 300) return;
-                    setState(() {
-                      final factor = pct / 100;
-                      final newW = factor.clamp(0.05, 0.95);
-                      final newH = (o.rect.height / o.rect.width * newW).clamp(0.05, 0.95);
-                      o.rect = Rect.fromLTWH(
-                        o.rect.left + (o.rect.width - newW) / 2,
-                        o.rect.top + (o.rect.height - newH) / 2,
-                        newW,
-                        newH,
-                      );
-                    });
-                  },
-                ),
-              ),
+              Text('$currentWidth %', style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
           Slider(
-            value: currentWidth.toDouble().clamp(5, 300),
+            value: currentWidth.toDouble().clamp(5, 150),
             min: 5,
             max: 150,
             onChanged: (v) {
@@ -463,56 +584,74 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           ),
         ],
       ),
-      ),
     );
   }
 
   Widget _buildToolbar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glassColor = isDark
+        ? const Color(0xFF14141F).withValues(alpha: 0.90)
+        : Colors.white.withValues(alpha: 0.92);
+
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          border: Border(
-            top: BorderSide(color: Theme.of(context).dividerColor),
+      child: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: glassColor,
+              border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  _toolButton(Icons.text_fields, 'Text', _mode == _EditMode.move, _addText),
+                  _toolButton(Icons.draw, 'Sign', false, _addSignature),
+                  _toolButton(Icons.approval, 'Stamp', false, _addStamp),
+                  _toolButton(
+                    Icons.highlight,
+                    'Highlight',
+                    _mode == _EditMode.highlight,
+                    () => setState(() => _mode = _mode == _EditMode.highlight ? _EditMode.move : _EditMode.highlight),
+                  ),
+                  _toolButton(
+                    Icons.gesture,
+                    'Draw',
+                    _mode == _EditMode.draw,
+                    () => setState(() => _mode = _mode == _EditMode.draw ? _EditMode.move : _EditMode.draw),
+                  ),
+                  _toolButton(
+                    Icons.auto_fix_normal,
+                    'Erase',
+                    _mode == _EditMode.erase,
+                    () => setState(() => _mode = _mode == _EditMode.erase ? _EditMode.move : _EditMode.erase),
+                  ),
+                  _toolButton(
+                    Icons.security,
+                    'Redact',
+                    _mode == _EditMode.redact,
+                    () => setState(() => _mode = _mode == _EditMode.redact ? _EditMode.move : _EditMode.redact),
+                  ),
+                  _toolButton(Icons.text_snippet, 'OCR', false, _runOcr),
+                  _toolButton(Icons.palette, 'Color', false, _pickColor),
+                ],
+              ),
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _toolButton(Icons.text_fields, 'Text', _mode == _EditMode.move,
-                _addText),
-            _toolButton(Icons.draw, 'Sign', false, _addSignature),
-            _toolButton(Icons.approval, 'Stamp', false, _addStamp),
-            _toolButton(Icons.highlight, 'Highlight',
-                _mode == _EditMode.highlight, () {
-              setState(() => _mode = _mode == _EditMode.highlight
-                  ? _EditMode.move
-                  : _EditMode.highlight);
-            }),
-            _toolButton(Icons.gesture, 'Draw', _mode == _EditMode.draw, () {
-              setState(() => _mode =
-                  _mode == _EditMode.draw ? _EditMode.move : _EditMode.draw);
-            }),
-            _toolButton(Icons.security, 'Redact', _mode == _EditMode.redact, () {
-              setState(() => _mode = _mode == _EditMode.redact
-                  ? _EditMode.move
-                  : _EditMode.redact);
-            }),
-            _toolButton(Icons.text_snippet, 'OCR', false, _runOcr),
-            _toolButton(Icons.palette, 'Color', false, _pickColor),
-          ],
         ),
       ),
     );
   }
 
-  Widget _toolButton(
-      IconData icon, String label, bool active, VoidCallback onTap) {
+  Widget _toolButton(IconData icon, String label, bool active, VoidCallback onTap) {
     final color = active
         ? Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7);
+
     return Semantics(
       label: '$label tool',
       button: true,
@@ -521,13 +660,20 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color),
+              Icon(icon, color: color, size: 22),
               const SizedBox(height: 2),
-              Text(label, style: TextStyle(color: color, fontSize: 11)),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
             ],
           ),
         ),
@@ -542,17 +688,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   void _commitDraft() {
     if (_mode == _EditMode.highlight && _draftRect != null) {
-      final r = Rect.fromLTWH(
-        _draftRect!.left,
-        _draftRect!.top,
-        _draftRect!.width.abs(),
-        _draftRect!.height.abs(),
-      );
-      if (r.width > 0.01 && r.height > 0.01) {
+      if (_draftRect!.width > 0.005 && _draftRect!.height > 0.005) {
         _overlays.add(PdfOverlay(
           type: PdfOverlayType.highlight,
           pageIndex: _pageIndex,
-          rect: r,
+          rect: _draftRect!,
           color: _color,
         ));
       }
@@ -570,21 +710,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         rect: Rect.fromLTRB(minX, minY, maxX, maxY),
         points: List.of(_draftPoints),
         color: _inkColor,
-        strokeWidth: 3,
+        strokeWidth: _strokeWidth,
       ));
     } else if (_mode == _EditMode.redact && _draftRect != null) {
-      final r = Rect.fromLTWH(
-        _draftRect!.left,
-        _draftRect!.top,
-        _draftRect!.width.abs(),
-        _draftRect!.height.abs(),
-      );
-      if (r.width > 0.01 && r.height > 0.01) {
+      if (_draftRect!.width > 0.005 && _draftRect!.height > 0.005) {
         _overlays.add(PdfOverlay(
           type: PdfOverlayType.redact,
           pageIndex: _pageIndex,
-          rect: r,
-          color: _color,
+          rect: _draftRect!,
+          color: Colors.black,
         ));
       }
     }
@@ -599,7 +733,6 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     if (_page == null) return;
     setState(() => _loading = true);
     try {
-      // Save current page as temporary image for OCR
       final tempDir = await Directory.systemTemp.createTemp('ocr_');
       final tempFile = File('${tempDir.path}/page.png');
       await tempFile.writeAsBytes(_page!.bytes);
@@ -612,7 +745,6 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           return;
         }
 
-        // Calculate scale factor from OCR image to normalized coordinates
         final scaleX = 1.0 / result.imageWidth;
         final scaleY = 1.0 / result.imageHeight;
 
@@ -630,7 +762,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 box.height * scaleY,
               ),
               text: line.text.trim(),
-              fontSize: 12,
+              fontSize: 14,
             ));
           }
           _selected = null;
@@ -652,12 +784,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit OCR Text'),
+        title: const Text('Edit Recognized Text'),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLines: null,
-          decoration: const InputDecoration(hintText: 'Correct the text...'),
+          decoration: const InputDecoration(hintText: 'Correct text...'),
         ),
         actions: [
           TextButton(
@@ -708,8 +840,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         pageIndex: _pageIndex,
         rect: const Rect.fromLTWH(0.1, 0.1, 0.5, 0.06),
         text: text.trim(),
-        color: Colors.black,
-        fontSize: 16,
+        color: _inkColor,
+        fontSize: 18,
       );
       _overlays.add(o);
       _selected = o;
@@ -756,8 +888,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Add a stamp',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Add a stamp', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Wrap(
               spacing: 10,
@@ -766,8 +897,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                   .map((s) => GestureDetector(
                         onTap: () => Navigator.pop(context, s),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           decoration: BoxDecoration(
                             border: Border.all(color: s.$2, width: 2),
                             borderRadius: BorderRadius.circular(6),
@@ -805,12 +935,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _pickColor() async {
     const palette = [
-      Color(0xFFFFEB3B),
-      Color(0xFFE53935),
-      Color(0xFF43A047),
-      Color(0xFF1E88E5),
-      Color(0xFF000000),
-      Color(0xFFFB8C00),
+      Color(0xFFFFEB3B), // Yellow
+      Color(0xFF00E5FF), // Cyan
+      Color(0xFF00E676), // Green
+      Color(0xFFFF4081), // Pink
+      Color(0xFFFF9100), // Orange
+      Color(0xFFE53935), // Red
+      Color(0xFF8A2BE2), // Purple
+      Color(0xFF000000), // Black
+      Color(0xFFFFFFFF), // White
     ];
     final picked = await showModalBottomSheet<Color>(
       context: context,
@@ -822,7 +955,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           children: palette
               .map((c) => GestureDetector(
                     onTap: () => Navigator.pop(context, c),
-                    child: CircleAvatar(backgroundColor: c, radius: 24),
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.grey.withValues(alpha: 0.5), width: 1.5),
+                      ),
+                    ),
                   ))
               .toList(),
         ),
@@ -858,43 +999,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   }
 
   void _showResult(String path) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 48),
-            const SizedBox(height: 12),
-            const Text('PDF saved', style: TextStyle(fontSize: 18)),
-            const SizedBox(height: 4),
-            Text(path.split('/').last,
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.done),
-                    label: const Text('Done'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () => ToolIO.share(path),
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+    showPdfResult(context, path);
   }
 }
 
@@ -902,33 +1007,45 @@ class _InkPainter extends CustomPainter {
   final List<Offset> normPoints;
   final Color color;
   final Size logical;
+  final double strokeWidth;
 
-  _InkPainter(this.normPoints, this.color, this.logical);
+  _InkPainter(this.normPoints, this.color, this.logical, {this.strokeWidth = 4.0});
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (normPoints.isEmpty) return;
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 3
+      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
-    for (var i = 0; i < normPoints.length - 1; i++) {
-      canvas.drawLine(
-        Offset(normPoints[i].dx * size.width, normPoints[i].dy * size.height),
-        Offset(normPoints[i + 1].dx * size.width,
-            normPoints[i + 1].dy * size.height),
-        paint,
+
+    if (normPoints.length == 1) {
+      canvas.drawCircle(
+        Offset(normPoints[0].dx * size.width, normPoints[0].dy * size.height),
+        strokeWidth / 2,
+        paint..style = PaintingStyle.fill,
       );
+      return;
     }
+
+    final path = Path();
+    path.moveTo(normPoints[0].dx * size.width, normPoints[0].dy * size.height);
+    for (var i = 1; i < normPoints.length; i++) {
+      final p0 = Offset(normPoints[i - 1].dx * size.width, normPoints[i - 1].dy * size.height);
+      final p1 = Offset(normPoints[i].dx * size.width, normPoints[i].dy * size.height);
+      final mid = Offset((p0.dx + p1.dx) / 2, (p0.dy + p1.dy) / 2);
+      path.quadraticBezierTo(p0.dx, p0.dy, mid.dx, mid.dy);
+    }
+    canvas.drawPath(path, paint);
   }
 
   @override
   bool shouldRepaint(covariant _InkPainter old) =>
-      old.normPoints != normPoints || old.color != color;
+      old.normPoints != normPoints || old.color != color || old.strokeWidth != strokeWidth;
 }
 
-/// Lets the user reuse a saved signature or draw a new one (optionally saving
-/// it to the library). Returns the chosen signature PNG bytes.
 class _SignatureLibrarySheet extends StatefulWidget {
   const _SignatureLibrarySheet();
 
@@ -978,9 +1095,7 @@ class _SignatureLibrarySheetState extends State<_SignatureLibrarySheet> {
           children: [
             Row(
               children: [
-                const Text('Signatures',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Text('Signatures', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const Spacer(),
                 FilledButton.icon(
                   onPressed: _drawNew,
@@ -1008,7 +1123,7 @@ class _SignatureLibrarySheetState extends State<_SignatureLibrarySheet> {
                   mainAxisSpacing: 10,
                   crossAxisSpacing: 10,
                   childAspectRatio: 2,
-                      children: _saved.map((path) {
+                  children: _saved.map((path) {
                     return GestureDetector(
                       onTap: () {
                         try {
@@ -1037,8 +1152,7 @@ class _SignatureLibrarySheetState extends State<_SignatureLibrarySheet> {
               ),
             const SizedBox(height: 8),
             if (_saved.isNotEmpty)
-              const Text('Long-press a signature to delete it.',
-                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+              const Text('Long-press a signature to delete it.', style: TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ),
       ),
@@ -1078,8 +1192,7 @@ class _SignaturePadState extends State<_SignaturePad> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Draw your signature',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text('Draw your signature', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Container(
             decoration: BoxDecoration(

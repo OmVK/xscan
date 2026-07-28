@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
+import 'package:xscan/features/qr/screens/qr_generator_screen.dart';
 import 'package:xscan/features/tools/services/tool_io.dart';
 
 class PdfToQrScreen extends StatefulWidget {
@@ -127,7 +128,12 @@ class _PdfToQrScreenState extends State<PdfToQrScreen> {
               icon: const Icon(Icons.open_in_new),
               tooltip: 'Open in QR Generator',
               onPressed: () {
-                Navigator.pushNamed(context, '/qr-generator', arguments: _qrData);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => QrGeneratorScreen(initialData: _qrData),
+                  ),
+                );
               },
             ),
         ],

@@ -12,18 +12,39 @@ import 'package:xscan/core/services/pdf_service.dart';
 
 /// Lets the user choose a PDF source: a previously produced PDF from the app's
 /// storage, or one of their scanned documents (rendered to PDF on demand).
+import 'dart:ui';
+
+/// Lets the user choose a PDF source: a previously produced PDF from the app's
+/// storage, or one of their scanned documents (rendered to PDF on demand).
 ///
 /// Returns the absolute path of the chosen PDF, or null if cancelled.
 Future<String?> pickInAppPdf(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final glassColor = isDark
+      ? const Color(0xFF161622).withValues(alpha: 0.88)
+      : Colors.white.withValues(alpha: 0.92);
+  final borderColor = isDark
+      ? Colors.white.withValues(alpha: 0.18)
+      : Colors.black.withValues(alpha: 0.08);
+
   return showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) => const FractionallySizedBox(
-      heightFactor: 0.85,
-      child: _PdfSourcePicker(),
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    builder: (_) => BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: glassColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border.all(color: borderColor, width: 1.2),
+        ),
+        child: const FractionallySizedBox(
+          heightFactor: 0.85,
+          child: _PdfSourcePicker(),
+        ),
+      ),
     ),
   );
 }
@@ -31,15 +52,32 @@ Future<String?> pickInAppPdf(BuildContext context) {
 /// Lets the user pick a scanned document; returns its ordered image paths
 /// (cover + additional pages), or null if cancelled.
 Future<List<String>?> pickDocumentImages(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final glassColor = isDark
+      ? const Color(0xFF161622).withValues(alpha: 0.88)
+      : Colors.white.withValues(alpha: 0.92);
+  final borderColor = isDark
+      ? Colors.white.withValues(alpha: 0.18)
+      : Colors.black.withValues(alpha: 0.08);
+
   return showModalBottomSheet<List<String>>(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) => const FractionallySizedBox(
-      heightFactor: 0.85,
-      child: _DocumentImagePicker(),
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    builder: (_) => BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: glassColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border.all(color: borderColor, width: 1.2),
+        ),
+        child: const FractionallySizedBox(
+          heightFactor: 0.85,
+          child: _DocumentImagePicker(),
+        ),
+      ),
     ),
   );
 }

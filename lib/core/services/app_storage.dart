@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -12,6 +13,7 @@ class AppStorage {
   static const _pdfDir = 'pdfs';
   static const _exportDir = 'exports';
   static const _signatureDir = 'signatures';
+  static const _qrPresetsFile = 'qr_presets.json';
 
   static Future<Directory> _subDir(String name) async {
     final base = await getApplicationDocumentsDirectory();
@@ -83,5 +85,36 @@ class AppStorage {
   static Future<void> deleteSignature(String path) async {
     final file = File(path);
     if (await file.exists()) await file.delete();
+  }
+
+  /// QR Preset storage
+  static Future<List<Map<String, dynamic>>> getQrPresets() async {
+    final base = await getApplicationDocumentsDirectory();
+    final file = File(p.join(base.path, _qrPresetsFile));
+    if (!await file.exists()) return [];
+    try {
+      final raw = await file.readAsString();
+      final list = jsonDecode(raw) as List;
+      return list.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> saveQrPreset(Map<String, dynamic> preset) async {
+    final current = await getQrPresets();
+    current.removeWhere((p) => p['name'] == preset['name']);
+    current.add(preset);
+    final base = await getApplicationDocumentsDirectory();
+    final file = File(p.join(base.path, _qrPresetsFile));
+    await file.writeAsString(jsonEncode(current), flush: true);
+  }
+
+  static Future<void> deleteQrPreset(String name) async {
+    final current = await getQrPresets();
+    current.removeWhere((p) => p['name'] == name);
+    final base = await getApplicationDocumentsDirectory();
+    final file = File(p.join(base.path, _qrPresetsFile));
+    await file.writeAsString(jsonEncode(current), flush: true);
   }
 }

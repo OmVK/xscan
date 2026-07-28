@@ -1,6 +1,8 @@
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:xscan/core/services/app_storage.dart';
+
 /// Small IO helpers shared across the PDF tool screens.
 class ToolIO {
   /// Lets the user pick one or many images. Returns absolute paths.
@@ -22,5 +24,10 @@ class ToolIO {
     await SharePlus.instance.share(
       ShareParams(files: paths.map((p) => XFile(p)).toList(), text: text),
     );
+  }
+
+  /// Saves bytes to local export storage and returns the saved file path.
+  static Future<String> saveToGallery(List<int> bytes, String name) async {
+    return AppStorage.writeExport(name, bytes);
   }
 }

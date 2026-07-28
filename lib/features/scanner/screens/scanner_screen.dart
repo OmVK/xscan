@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
 import 'package:xscan/core/providers/document_provider.dart';
+import 'package:xscan/core/providers/settings_provider.dart';
 import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/core/services/barcode_utils.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -66,6 +67,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
   @override
   void initState() {
     super.initState();
+    final scriptKey = ref.read(ocrScriptProvider);
+    _ocrScript = OcrService.scripts[scriptKey] ?? TextRecognitionScript.latin;
     _scanLineController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500),

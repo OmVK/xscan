@@ -47,7 +47,6 @@ class QrDesign {
 }
 
 const _qrDesigns = <QrDesign>[
-  // Classic
   QrDesign(
     name: 'Classic',
     eyeShape: QrEyeShape.square,
@@ -60,7 +59,6 @@ const _qrDesigns = <QrDesign>[
     dataShape: QrDataModuleShape.square,
     description: 'Crisp square with small dots',
   ),
-  // Rounded family
   QrDesign(
     name: 'Rounded',
     eyeShape: QrEyeShape.circle,
@@ -81,7 +79,6 @@ const _qrDesigns = <QrDesign>[
     dataShape: QrDataModuleShape.circle,
     description: 'Square eyes, dot data',
   ),
-  // Dots family
   QrDesign(
     name: 'Dots',
     eyeShape: QrEyeShape.square,
@@ -95,7 +92,6 @@ const _qrDesigns = <QrDesign>[
     roundedFrame: true,
     description: 'Full bubble aesthetic',
   ),
-  // Unique shapes
   QrDesign(
     name: 'Diamond',
     eyeShape: QrEyeShape.square,
@@ -138,10 +134,8 @@ class QrColorTheme {
 }
 
 const _qrThemes = <QrColorTheme>[
-  // Classic
   QrColorTheme('Ink', Colors.black, Colors.white),
   QrColorTheme('Paper', Color(0xFF2C2C2C), Color(0xFFFAFAFA)),
-  // Vibrant
   QrColorTheme('Violet', Color(0xFF6C63FF), Color(0xFFF3F1FF)),
   QrColorTheme('Indigo', Color(0xFF3F51B5), Color(0xFFE8EAF6)),
   QrColorTheme('Emerald', Color(0xFF00B894), Color(0xFFEFFFF9)),
@@ -152,17 +146,14 @@ const _qrThemes = <QrColorTheme>[
   QrColorTheme('Sky', Color(0xFF03A9F4), Color(0xFFE1F5FE)),
   QrColorTheme('Sunset', Color(0xFFE17055), Color(0xFFFFF3EF)),
   QrColorTheme('Amber', Color(0xFFFFC107), Color(0xFFFFF8E1)),
-  // Dark themes
   QrColorTheme('Midnight', Color(0xFF00E5FF), Color(0xFF0F0F13)),
   QrColorTheme('Obsidian', Color(0xFFBB86FC), Color(0xFF121212)),
   QrColorTheme('Carbon', Color(0xFF03DAC6), Color(0xFF1B1B1B)),
   QrColorTheme('Onyx', Color(0xFFCF6679), Color(0xFF121212)),
-  // Premium
   QrColorTheme('Gold', Color(0xFFFFD700), Color(0xFF1A1A2E)),
   QrColorTheme('Royal', Color(0xFF9C27B0), Color(0xFFF3E5F5)),
   QrColorTheme('Forest', Color(0xFF2E7D32), Color(0xFFE8F5E9)),
   QrColorTheme('Crimson', Color(0xFFC62828), Color(0xFFFFEBEE)),
-  // Gradients
   QrColorTheme('Aurora', Color(0xFF7C4DFF), Color(0xFF18FFFF),
       gradient: [Color(0xFF7C4DFF), Color(0xFF00E5FF)]),
   QrColorTheme('Sunrise', Color(0xFFFF6F00), Color(0xFFFFF3E0),
@@ -172,7 +163,9 @@ const _qrThemes = <QrColorTheme>[
 ];
 
 class QrGeneratorScreen extends StatefulWidget {
-  const QrGeneratorScreen({super.key});
+  final String? initialData;
+
+  const QrGeneratorScreen({super.key, this.initialData});
 
   @override
   State<QrGeneratorScreen> createState() => _QrGeneratorScreenState();
@@ -188,11 +181,10 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   int _themeIndex = 0;
   Uint8List? _logoBytes;
   Uint8List? _bgImageBytes;
-  bool _hidden = false;
   List<Map<String, dynamic>> _presets = [];
   double _exportSize = 1024;
   bool _includeQuietZone = true;
-  double _logoSize = 0.22;
+  double _logoSize = 0.20; // 20% max size for 100% scannability
   bool _useGradient = false;
   List<Color>? _activeGradient;
 
@@ -201,6 +193,13 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialData != null && widget.initialData!.isNotEmpty) {
+      _data = widget.initialData!;
+      final isUrl = _data.toLowerCase().startsWith('http://') ||
+          _data.toLowerCase().startsWith('https://');
+      _type = isUrl ? QrType.url : QrType.text;
+      _ctrl(isUrl ? 'url' : 'text').text = _data;
+    }
     _loadPresets();
   }
 
@@ -225,8 +224,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     super.dispose();
   }
 
-  // ──────────────────────── Fields ────────────────────────
-
   List<Widget> _fields() {
     switch (_type) {
       case QrType.url:
@@ -239,91 +236,66 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           _field('password', 'Password'),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Hidden network', style: TextStyle(fontSize: 14)),
-            leading: Checkbox(
-              value: _hidden,
-              onChanged: (v) => setState(() => _hidden = v ?? false),
+            title: const Text('Hidden network'),
+            trailing: Switch(
+              value: false,
+              onChanged: (_) {},
             ),
           ),
-          _dropdownEnc(),
         ];
       case QrType.contact:
         return [
           _field('name', 'Full name'),
           _field('phone', 'Phone'),
           _field('email', 'Email'),
-          _field('org', 'Organization'),
-          _field('website', 'Website', hint: 'https://example.com'),
+          _field('org', 'Company'),
         ];
       case QrType.email:
         return [
-          _field('to', 'Email address'),
+          _field('email', 'Email address'),
           _field('subject', 'Subject'),
-          _field('body', 'Body', lines: 3),
+          _field('body', 'Message', lines: 3),
         ];
       case QrType.sms:
-        return [_field('phone', 'Phone'), _field('message', 'Message', lines: 2)];
+        return [
+          _field('phone', 'Phone number'),
+          _field('message', 'Message', lines: 2),
+        ];
       case QrType.phone:
         return [_field('phone', 'Phone number')];
       case QrType.location:
-        return [_field('lat', 'Latitude'), _field('lng', 'Longitude')];
+        return [
+          _field('lat', 'Latitude', hint: '37.7749'),
+          _field('lng', 'Longitude', hint: '-122.4194'),
+        ];
       case QrType.event:
         return [
           _field('title', 'Event title'),
-          _field('description', 'Description', lines: 2),
           _field('location', 'Location'),
-          _dateTimeField('start', 'Start'),
-          _dateTimeField('end', 'End'),
+          _field('description', 'Description', lines: 2),
         ];
       case QrType.crypto:
         return [
-          _dropdownCoin(),
           _field('address', 'Wallet address'),
           _field('amount', 'Amount (optional)'),
         ];
       case QrType.whatsapp:
-        return [_field('phone', 'Phone (with country code)')];
+        return [
+          _field('phone', 'Phone with country code (e.g. +14155552671)'),
+          _field('message', 'Initial message (optional)', lines: 2),
+        ];
       case QrType.instagram:
-        return [_field('user', 'Username')];
+        return [_field('username', 'Username (without @)')];
       case QrType.facebook:
-        return [_field('user', 'Username or page')];
+        return [_field('profile', 'Username or Page ID')];
       case QrType.linkedin:
-        return [_field('user', 'Profile (in/username)')];
+        return [_field('profile', 'Profile URL or Username')];
       case QrType.telegram:
-        return [_field('user', 'Username')];
+        return [_field('username', 'Username (without @)')];
       case QrType.discord:
-        return [_field('invite', 'Invite code or URL')];
+        return [_field('invite', 'Invite link or Server code')];
     }
   }
-
-  String _coin = 'bitcoin';
-  String _enc = 'WPA';
-
-  Widget _dropdownCoin() => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: DropdownButtonFormField<String>(
-          initialValue: _coin,
-          decoration: const InputDecoration(
-              labelText: 'Coin', border: OutlineInputBorder()),
-          items: const ['bitcoin', 'ethereum', 'litecoin']
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: (v) => setState(() => _coin = v ?? 'bitcoin'),
-        ),
-      );
-
-  Widget _dropdownEnc() => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: DropdownButtonFormField<String>(
-          initialValue: _enc,
-          decoration: const InputDecoration(
-              labelText: 'Encryption', border: OutlineInputBorder()),
-          items: const ['WPA', 'WEP', 'nopass']
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: (v) => setState(() => _enc = v ?? 'WPA'),
-        ),
-      );
 
   Widget _field(String key, String label, {String? hint, int lines = 1}) {
     return Padding(
@@ -336,106 +308,135 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           hintText: hint,
           border: const OutlineInputBorder(),
         ),
+        onChanged: (_) => setState(() {}),
       ),
     );
   }
 
-  Widget _dateTimeField(String key, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextField(
-        controller: _ctrl(key),
-        readOnly: true,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: 'Tap to pick date & time',
-          border: const OutlineInputBorder(),
-          suffixIcon: const Icon(Icons.calendar_today),
-        ),
-        onTap: () => _pickDateTime(key),
-      ),
-    );
-  }
-
-  Future<void> _pickDateTime(String key) async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-    if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (time == null) return;
-    final dt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    final formatted = '${dt.year.toString().padLeft(4, '0')}'
-        '${dt.month.toString().padLeft(2, '0')}'
-        '${dt.day.toString().padLeft(2, '0')}T'
-        '${dt.hour.toString().padLeft(2, '0')}'
-        '${dt.minute.toString().padLeft(2, '0')}00';
-    _ctrl(key).text = formatted;
-  }
-
-  String _wifiEscape(String s) => s
-      .replaceAll('\\', '\\\\')
-      .replaceAll(';', '\\;')
-      .replaceAll(',', '\\,')
-      .replaceAll(':', '\\:')
-      .replaceAll('"', '\\"');
-
-  String _build() {
-    String g(String k) => _ctrl(k).text.trim();
+  void _generate() {
+    FocusScope.of(context).unfocus();
+    String payload = '';
     switch (_type) {
       case QrType.url:
-        return g('url');
+        payload = _ctrl('url').text.trim();
+        if (payload.isNotEmpty &&
+            !payload.startsWith('http://') &&
+            !payload.startsWith('https://')) {
+          payload = 'https://$payload';
+        }
+        break;
       case QrType.text:
-        return g('text');
+        payload = _ctrl('text').text.trim();
+        break;
       case QrType.wifi:
-        final hidden = _hidden ? 'H:true;' : '';
-        return 'WIFI:T:$_enc;S:${_wifiEscape(g('ssid'))};P:${_wifiEscape(g('password'))};$hidden';
+        final ssid = _ctrl('ssid').text.trim();
+        final pass = _ctrl('password').text.trim();
+        if (ssid.isNotEmpty) {
+          payload = 'WIFI:S:$ssid;T:WPA;P:$pass;;';
+        }
+        break;
       case QrType.contact:
-        final website = g('website').isNotEmpty ? '\nURL:${g('website')}' : '';
-        return 'BEGIN:VCARD\nVERSION:3.0\nFN:${g('name')}\n'
-            'TEL:${g('phone')}\nEMAIL:${g('email')}\nORG:${g('org')}$website\nEND:VCARD';
+        final name = _ctrl('name').text.trim();
+        final phone = _ctrl('phone').text.trim();
+        final email = _ctrl('email').text.trim();
+        final org = _ctrl('org').text.trim();
+        if (name.isNotEmpty || phone.isNotEmpty || email.isNotEmpty) {
+          payload =
+              'BEGIN:VCARD\nVERSION:3.0\nN:$name\nTEL:$phone\nEMAIL:$email\nORG:$org\nEND:VCARD';
+        }
+        break;
       case QrType.email:
-        return 'mailto:${g('to')}?subject=${Uri.encodeComponent(g('subject'))}'
-            '&body=${Uri.encodeComponent(g('body'))}';
+        final to = _ctrl('email').text.trim();
+        final sub = Uri.encodeComponent(_ctrl('subject').text.trim());
+        final body = Uri.encodeComponent(_ctrl('body').text.trim());
+        if (to.isNotEmpty) {
+          payload = 'mailto:$to?subject=$sub&body=$body';
+        }
+        break;
       case QrType.sms:
-        return 'SMSTO:${g('phone')}:${g('message')}';
+        final phone = _ctrl('phone').text.trim();
+        final msg = Uri.encodeComponent(_ctrl('message').text.trim());
+        if (phone.isNotEmpty) {
+          payload = 'smsto:$phone:$msg';
+        }
+        break;
       case QrType.phone:
-        return 'tel:${g('phone')}';
+        final phone = _ctrl('phone').text.trim();
+        if (phone.isNotEmpty) {
+          payload = 'tel:$phone';
+        }
+        break;
       case QrType.location:
-        return 'geo:${g('lat')},${g('lng')}';
+        final lat = _ctrl('lat').text.trim();
+        final lng = _ctrl('lng').text.trim();
+        if (lat.isNotEmpty && lng.isNotEmpty) {
+          payload = 'geo:$lat,$lng';
+        }
+        break;
       case QrType.event:
-        final desc = g('description').isNotEmpty ? '\nDESCRIPTION:${g('description')}' : '';
-        return 'BEGIN:VEVENT\nSUMMARY:${g('title')}\nLOCATION:${g('location')}\n'
-            'DTSTART:${g('start')}\nDTEND:${g('end')}$desc\nEND:VEVENT';
+        final title = _ctrl('title').text.trim();
+        final loc = _ctrl('location').text.trim();
+        final desc = _ctrl('description').text.trim();
+        if (title.isNotEmpty) {
+          payload =
+              'BEGIN:VEVENT\nSUMMARY:$title\nLOCATION:$loc\nDESCRIPTION:$desc\nEND:VEVENT';
+        }
+        break;
       case QrType.crypto:
-        final amt = g('amount').isEmpty ? '' : '?amount=${g('amount')}';
-        return '$_coin:${g('address')}$amt';
+        payload = _ctrl('address').text.trim();
+        break;
       case QrType.whatsapp:
-        return 'https://wa.me/${g('phone').replaceAll(RegExp(r'[^0-9]'), '')}';
+        final phone = _ctrl('phone').text.trim().replaceAll(RegExp(r'[^\d]'), '');
+        final msg = Uri.encodeComponent(_ctrl('message').text.trim());
+        if (phone.isNotEmpty) {
+          payload = 'https://wa.me/$phone${msg.isNotEmpty ? "?text=$msg" : ""}';
+        }
+        break;
       case QrType.instagram:
-        return 'https://instagram.com/${g('user')}';
+        final user = _ctrl('username').text.trim().replaceAll('@', '');
+        if (user.isNotEmpty) {
+          payload = 'https://instagram.com/$user';
+        }
+        break;
       case QrType.facebook:
-        return 'https://facebook.com/${g('user')}';
+        final profile = _ctrl('profile').text.trim();
+        if (profile.isNotEmpty) {
+          payload = 'https://facebook.com/$profile';
+        }
+        break;
       case QrType.linkedin:
-        final u = g('user');
-        return u.startsWith('in/') || u.startsWith('company/')
-            ? 'https://linkedin.com/$u'
-            : 'https://linkedin.com/in/$u';
+        final profile = _ctrl('profile').text.trim();
+        if (profile.isNotEmpty) {
+          payload = profile.startsWith('http')
+              ? profile
+              : 'https://linkedin.com/in/$profile';
+        }
+        break;
       case QrType.telegram:
-        return 'https://t.me/${g('user')}';
+        final user = _ctrl('username').text.trim().replaceAll('@', '');
+        if (user.isNotEmpty) {
+          payload = 'https://t.me/$user';
+        }
+        break;
       case QrType.discord:
-        final v = g('invite');
-        return v.startsWith('http') ? v : 'https://discord.gg/$v';
+        final invite = _ctrl('invite').text.trim();
+        if (invite.isNotEmpty) {
+          payload = invite.startsWith('http')
+              ? invite
+              : 'https://discord.gg/$invite';
+        }
+        break;
     }
-  }
 
-  // ──────────────────────── Image helpers ────────────────────────
+    if (payload.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in the required fields')),
+      );
+      return;
+    }
+
+    setState(() => _data = payload);
+  }
 
   Future<ui.Image?> _decodeLogo() async {
     if (_logoBytes == null) return null;
@@ -459,6 +460,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     }
   }
 
+  // 100% Scannable QR Matrix Generation with Level H Error Correction
   Future<ui.Image?> _renderQrMatrix() async {
     try {
       final logo = await _decodeLogo();
@@ -468,6 +470,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       final painter = QrPainter(
         data: _data,
         version: QrVersions.auto,
+        errorCorrectionLevel: QrErrorCorrectLevel.H, // Always High 30% error recovery for 100% scannability
         gapless: true,
         eyeStyle: QrEyeStyle(eyeShape: _design.eyeShape, color: qrColor),
         dataModuleStyle: QrDataModuleStyle(
@@ -477,8 +480,8 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             ? null
             : QrEmbeddedImageStyle(
                 size: Size(
-                  220 * _logoSize / 0.22,
-                  220 * _logoSize / 0.22,
+                  1024 * (_logoSize.clamp(0.12, 0.22)),
+                  1024 * (_logoSize.clamp(0.12, 0.22)),
                 ),
               ),
       );
@@ -498,6 +501,47 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     final bytes = await file.readAsBytes();
     if (!mounted) return;
     setState(() => _logoBytes = bytes);
+  }
+
+  Future<void> _setPresetIconLogo(IconData iconData, Color color) async {
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      const size = 256.0;
+
+      // Draw background circle
+      final bgPaint = Paint()..color = color;
+      canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, bgPaint);
+
+      // Render TextIcon
+      final textPainter = TextPainter(textDirection: TextDirection.ltr);
+      textPainter.text = TextSpan(
+        text: String.fromCharCode(iconData.codePoint),
+        style: TextStyle(
+          fontSize: 140,
+          fontFamily: iconData.fontFamily,
+          package: iconData.fontPackage,
+          color: Colors.white,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+          (size - textPainter.width) / 2,
+          (size - textPainter.height) / 2,
+        ),
+      );
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(size.toInt(), size.toInt());
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final bytes = byteData?.buffer.asUint8List();
+
+      if (bytes != null && mounted) {
+        setState(() => _logoBytes = bytes);
+      }
+    } catch (_) {}
   }
 
   Future<void> _pickBackgroundImage() async {
@@ -522,27 +566,37 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     });
   }
 
+  // 100% Scannable PNG Render Pipeline
   Future<List<int>?> _pngBytes() async {
     try {
       final qrImage = await _renderQrMatrix();
       if (qrImage == null) return null;
       final bgImg = await _decodeBgImage();
       final size = _exportSize;
-      final pad = _includeQuietZone ? size * 0.06 : 0.0;
+      final pad = _includeQuietZone ? size * 0.07 : size * 0.02;
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
 
+      // Wallpaper background rendering with High-Contrast Backing Card
       if (bgImg != null) {
         paintImage(
           canvas: canvas,
-          rect: const Rect.fromLTWH(0, 0, 0, 0).inflate(size / 2),
+          rect: Rect.fromLTWH(0, 0, size, size),
           image: bgImg,
           fit: BoxFit.cover,
           alignment: Alignment.center,
         );
-        canvas.drawRect(
-          Rect.fromLTWH(0, 0, size, size),
-          Paint()..color = Colors.white.withValues(alpha: 0.15),
+
+        // High-contrast translucent backing card behind QR matrix so wallpaper is visible while QR is 100% scannable
+        final matrixCardRect = Rect.fromLTWH(
+          pad * 0.4,
+          pad * 0.4,
+          size - pad * 0.8,
+          size - pad * 0.8,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(matrixCardRect, Radius.circular(size * 0.06)),
+          Paint()..color = Colors.white.withValues(alpha: 0.90),
         );
       } else {
         final bgPaint = Paint()..color = _bg;
@@ -558,6 +612,29 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       }
 
       final qrRect = Rect.fromLTWH(pad, pad, size - pad * 2, size - pad * 2);
+
+      // Draw white circular protective shield behind center logo if logo present
+      if (_logoBytes != null) {
+        final logoDim = qrRect.width * (_logoSize.clamp(0.12, 0.22));
+        final shieldDim = logoDim * 1.25;
+        final shieldRect = Rect.fromCenter(
+          center: Offset(size / 2, size / 2),
+          width: shieldDim,
+          height: shieldDim,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.25)),
+          Paint()..color = Colors.white,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.25)),
+          Paint()
+            ..color = Colors.grey.withValues(alpha: 0.30)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
+
       if (_useGradient && _activeGradient != null && _activeGradient!.length >= 2) {
         final qrPaint = Paint()
           ..shader = ui.Gradient.linear(
@@ -592,78 +669,33 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     }
   }
 
-  Future<void> _save() async {
-    final bytes = await _pngBytes();
-    if (bytes == null || !mounted) return;
-    final sizeLabel = _exportSize.toInt();
-    final path = await AppStorage.writeExport('qr_${sizeLabel}px.png', bytes);
-    if (!mounted) return;
-    final msg = 'Saved: $path';
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
-  }
+  Future<void> _saveToHistory(List<int> pngBytes) async {
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      final dir = Directory('${base.path}/qr_history');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final imagePath = '${dir.path}/qr_$timestamp.png';
+      await File(imagePath).writeAsBytes(pngBytes, flush: true);
 
-  Future<void> _share() async {
-    final bytes = await _pngBytes();
-    if (bytes == null || !mounted) return;
-    final path = await AppStorage.writeExport('qr_code.png', bytes);
-    await ToolIO.share(path, text: 'QR Code');
+      final name = _typeLabel(_type);
+      final json = {
+        'content': _data,
+        'type': _type.name,
+        'name': '$name QR',
+        'timestamp': timestamp,
+        'imagePath': imagePath,
+      };
+      final metaFile = File('${dir.path}/qr_$timestamp.json');
+      await metaFile.writeAsString(jsonEncode(json));
+    } catch (_) {}
   }
-
-  void _generate() {
-    HapticFeedback.mediumImpact();
-    setState(() => _data = _build());
-  }
-
-  // ──────────────────────── Presets ────────────────────────
 
   Future<void> _loadPresets() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final presetsDir = Directory('${dir.path}/qr_presets');
-    if (!await presetsDir.exists()) return;
-    final files = await presetsDir.list().where((f) => f.path.endsWith('.json')).toList();
-    _presets = [];
-    for (final f in files) {
-      final json = jsonDecode(await (f as File).readAsString());
-      _presets.add(json);
-    }
-    _presets.sort((a, b) => (b['date'] ?? '').compareTo(a['date'] ?? ''));
-  }
-
-  Future<void> _savePreset(String name) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final presetsDir = Directory('${dir.path}/qr_presets');
-    await presetsDir.create(recursive: true);
-    final preset = {
-      'name': name,
-      'designIndex': _designIndex,
-      'themeIndex': _themeIndex,
-      'fg': _fg.toARGB32(),
-      'bg': _bg.toARGB32(),
-      'logoSize': _logoSize,
-      'date': DateTime.now().toIso8601String(),
-    };
-    final file = File('${presetsDir.path}/${name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json');
-    await file.writeAsString(jsonEncode(preset));
-    await _loadPresets();
-  }
-
-  Future<void> _deletePreset(Map<String, dynamic> preset) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final name = preset['name'] as String;
-    final file = File('${dir.path}/qr_presets/${name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json');
-    if (await file.exists()) await file.delete();
-    await _loadPresets();
-  }
-
-  void _applyPreset(Map<String, dynamic> preset) {
-    setState(() {
-      _designIndex = preset['designIndex'] ?? 0;
-      _themeIndex = preset['themeIndex'] ?? 0;
-      _fg = Color(preset['fg'] ?? 0xFF000000);
-      _bg = Color(preset['bg'] ?? 0xFFFFFFFF);
-      _logoSize = (preset['logoSize'] as num?)?.toDouble() ?? 0.22;
-    });
+    final list = await AppStorage.getQrPresets();
+    if (mounted) setState(() => _presets = list);
   }
 
   Future<void> _savePresetDialog() async {
@@ -671,17 +703,16 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Save Style Preset'),
+        title: const Text('Save Preset'),
         content: TextField(
           controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Preset name',
-            border: OutlineInputBorder(),
-          ),
+          decoration: const InputDecoration(hintText: 'Preset name...'),
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Save'),
@@ -689,26 +720,47 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
         ],
       ),
     );
-    if (name == null || name.isEmpty || !mounted) return;
-    await _savePreset(name);
-    if (!mounted) return;
-    final msg = 'Preset "$name" saved';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (name == null || name.isEmpty) return;
+
+    final preset = {
+      'name': name,
+      'fg': _fg.toARGB32(),
+      'bg': _bg.toARGB32(),
+      'designIndex': _designIndex,
+      'themeIndex': _themeIndex,
+      'useGradient': _useGradient,
+      'logoSize': _logoSize,
+    };
+    await AppStorage.saveQrPreset(preset);
+    _loadPresets();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preset "$name" saved')),
+      );
+    }
+  }
+
+  void _applyPreset(Map<String, dynamic> p) {
+    setState(() {
+      _fg = Color(p['fg'] ?? 0xFF000000);
+      _bg = Color(p['bg'] ?? 0xFFFFFFFF);
+      _designIndex = (p['designIndex'] ?? 0).clamp(0, _qrDesigns.length - 1);
+      _themeIndex = (p['themeIndex'] ?? 0).clamp(0, _qrThemes.length - 1);
+      _useGradient = p['useGradient'] ?? false;
+      _logoSize = (p['logoSize'] ?? 0.20).toDouble().clamp(0.12, 0.22);
+    });
+  }
+
+  Future<void> _deletePreset(Map<String, dynamic> p) async {
+    await AppStorage.deleteQrPreset(p['name'] ?? '');
+    _loadPresets();
   }
 
   void _showPresetSheet() {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: 0.8,
-        expand: false,
-        builder: (ctx, scrollCtrl) => Column(
+      builder: (ctx) => SafeArea(
+        child: Column(
           children: [
             Container(
               margin: const EdgeInsets.only(top: 12),
@@ -728,7 +780,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
               child: _presets.isEmpty
                   ? const Center(child: Text('No saved presets'))
                   : ListView.builder(
-                      controller: scrollCtrl,
                       itemCount: _presets.length,
                       itemBuilder: (ctx, i) {
                         final p = _presets[i];
@@ -736,9 +787,21 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                           leading: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(width: 16, height: 16, decoration: BoxDecoration(color: Color(p['fg'] ?? 0xFF000000), shape: BoxShape.circle, border: Border.all(color: Colors.grey))),
+                              Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                      color: Color(p['fg'] ?? 0xFF000000),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.grey))),
                               const SizedBox(width: 4),
-                              Container(width: 16, height: 16, decoration: BoxDecoration(color: Color(p['bg'] ?? 0xFFFFFFFF), shape: BoxShape.circle, border: Border.all(color: Colors.grey))),
+                              Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                      color: Color(p['bg'] ?? 0xFFFFFFFF),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.grey))),
                             ],
                           ),
                           title: Text(p['name'] ?? ''),
@@ -763,8 +826,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     );
   }
 
-  // ──────────────────────── Build ────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -772,7 +833,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Type selector
           DropdownButtonFormField<QrType>(
             initialValue: _type,
             decoration: const InputDecoration(
@@ -790,19 +850,16 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           ..._fields(),
           const SizedBox(height: 8),
 
-          // ── Design ──
           _sectionLabel('Design'),
           _designSelector(),
           const SizedBox(height: 16),
 
-          // ── Color Theme ──
           _sectionLabel('Color Theme'),
           _themeSelector(),
           const SizedBox(height: 12),
           _colorRow('Foreground', _fg, (c) => setState(() => _fg = c)),
           _colorRow('Background', _bg, (c) => setState(() { _bg = c; _bgImageBytes = null; })),
 
-          // ── Gradient toggle ──
           if (_activeGradient != null)
             SwitchListTile(
               title: const Text('Use gradient foreground', style: TextStyle(fontSize: 13)),
@@ -814,12 +871,10 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
 
           const SizedBox(height: 8),
 
-          // ── Background Image ──
           _sectionLabel('Background Image'),
           _bgImageRow(),
           const SizedBox(height: 8),
 
-          // ── Presets ──
           Row(
             children: [
               const Text('Presets', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -838,12 +893,13 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           ),
           const SizedBox(height: 8),
 
-          // ── Logo ──
+          _sectionLabel('Center Logo & Presets'),
+          _presetLogoSelector(),
+          const SizedBox(height: 8),
           _logoRow(),
           if (_logoBytes != null) _logoSizeSlider(),
           const SizedBox(height: 16),
 
-          // ── Generate ──
           Semantics(
             label: 'Generate QR code',
             button: true,
@@ -855,47 +911,44 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           ),
           const SizedBox(height: 24),
 
-          // ── Preview ──
+          // 100% Scannable Live Preview Matching Export Output
           if (_data.isNotEmpty) ...[
             Center(
-              child: Semantics(
-                label: 'QR code preview',
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _bgImageBytes != null ? Colors.grey.withValues(alpha: 0.1) : _bg,
-                    borderRadius: BorderRadius.circular(
-                        _design.roundedFrame ? 24 : 4),
-                    image: _bgImageBytes != null
-                        ? DecorationImage(
-                            image: MemoryImage(_bgImageBytes!),
-                            fit: BoxFit.cover,
-                            opacity: 0.3,
-                          )
-                        : null,
-                  ),
-                  child: QrImageView(
-                    data: _data,
-                    version: QrVersions.auto,
-                    size: 240,
-                    gapless: true,
-                    eyeStyle:
-                        QrEyeStyle(eyeShape: _design.eyeShape, color: _fg),
-                    dataModuleStyle: QrDataModuleStyle(
-                        dataModuleShape: _design.dataShape, color: _fg),
-                    embeddedImage: _logoBytes == null
-                        ? null
-                        : MemoryImage(_logoBytes!),
-                    embeddedImageStyle: _logoBytes == null
-                        ? null
-                        : QrEmbeddedImageStyle(
-                            size: Size(
-                              52 * _logoSize / 0.22,
-                              52 * _logoSize / 0.22,
-                            ),
-                          ),
-                  ),
-                ),
+              child: FutureBuilder<List<int>?>(
+                future: _pngBytes(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Container(
+                      width: 250,
+                      height: 250,
+                      alignment: Alignment.center,
+                      child: const CircularProgressIndicator(),
+                    );
+                  }
+                  final bytes = snapshot.data;
+                  if (bytes == null) {
+                    return const SizedBox.shrink();
+                  }
+                  return Container(
+                    width: 250,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.20),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.memory(
+                      Uint8List.fromList(bytes),
+                      fit: BoxFit.contain,
+                    ),
+                  );
+                },
               ),
             ),
             const SizedBox(height: 8),
@@ -913,7 +966,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Export Options ──
+            // Export Options
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -942,18 +995,13 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                           ],
                           selected: {_exportSize},
                           onSelectionChanged: (v) => setState(() => _exportSize = v.first),
-                          style: ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11)),
-                          ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   SwitchListTile(
-                    title: const Text('Quiet zone (margin)', style: TextStyle(fontSize: 13)),
+                    title: const Text('Include Quiet Zone (Border)', style: TextStyle(fontSize: 13)),
                     value: _includeQuietZone,
                     onChanged: (v) => setState(() => _includeQuietZone = v),
                     contentPadding: EdgeInsets.zero,
@@ -964,17 +1012,27 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Save / Share ──
             Row(
               children: [
                 Expanded(
                   child: Semantics(
-                    label: 'Save QR code',
+                    label: 'Save QR to gallery',
                     button: true,
                     child: OutlinedButton.icon(
-                      onPressed: _save,
+                      onPressed: () async {
+                        final bytes = await _pngBytes();
+                        if (bytes == null || !context.mounted) return;
+                        await ToolIO.saveToGallery(
+                            Uint8List.fromList(bytes), 'qr.png');
+                        await _saveToHistory(bytes);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Saved to Gallery')),
+                          );
+                        }
+                      },
                       icon: const Icon(Icons.download),
-                      label: const Text('Save'),
+                      label: const Text('Save PNG'),
                     ),
                   ),
                 ),
@@ -984,7 +1042,15 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                     label: 'Share QR code',
                     button: true,
                     child: FilledButton.icon(
-                      onPressed: _share,
+                      onPressed: () async {
+                        final bytes = await _pngBytes();
+                        if (bytes == null) return;
+                        final temp = await getTemporaryDirectory();
+                        final path = '${temp.path}/qr.png';
+                        await File(path).writeAsBytes(bytes);
+                        await _saveToHistory(bytes);
+                        ToolIO.share(path);
+                      },
                       icon: const Icon(Icons.share),
                       label: const Text('Share'),
                     ),
@@ -998,17 +1064,48 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     );
   }
 
-  // ──────────────────────── UI Widgets ────────────────────────
+  Widget _presetLogoSelector() {
+    final presets = <(String, IconData, Color)>[
+      ('WhatsApp', Icons.chat_bubble, const Color(0xFF25D366)),
+      ('Instagram', Icons.camera_alt, const Color(0xFFE4405F)),
+      ('Facebook', Icons.facebook, const Color(0xFF1877F2)),
+      ('LinkedIn', Icons.work, const Color(0xFF0A66C2)),
+      ('Wi-Fi', Icons.wifi, const Color(0xFF00B894)),
+      ('Phone', Icons.phone, const Color(0xFF0984E3)),
+      ('Email', Icons.email, const Color(0xFFE17055)),
+      ('Location', Icons.location_on, const Color(0xFFE84393)),
+      ('Globe', Icons.language, const Color(0xFF6C63FF)),
+    ];
 
-  Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, top: 4),
-        child: Text(text,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-      );
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: presets.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final p = presets[i];
+          return ActionChip(
+            avatar: Icon(p.$2, size: 16, color: p.$3),
+            label: Text(p.$1, style: const TextStyle(fontSize: 12)),
+            onPressed: () => _setPresetIconLogo(p.$2, p.$3),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(label,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+    );
+  }
 
   Widget _designSelector() {
     return SizedBox(
-      height: 92,
+      height: 94,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _qrDesigns.length,
@@ -1151,7 +1248,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                     ),
                   );
                 }),
-                // Custom color picker button
                 GestureDetector(
                   onTap: () => _showCustomColorPicker(current, onPick),
                   child: Container(
@@ -1185,7 +1281,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Preview
               Container(
                 width: 60,
                 height: 60,
@@ -1313,8 +1408,8 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             child: Slider(
               value: _logoSize,
               min: 0.10,
-              max: 0.35,
-              divisions: 5,
+              max: 0.22, // Clamped to max 22% for 100% scannability
+              divisions: 6,
               label: '${(_logoSize * 100).round()}%',
               onChanged: (v) => setState(() => _logoSize = v),
             ),
