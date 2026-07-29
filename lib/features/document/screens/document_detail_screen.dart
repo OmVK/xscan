@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
+import 'package:xscan/features/scanner/widgets/ocr_result_sheet.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
@@ -18,8 +19,15 @@ import 'package:xscan/core/providers/document_provider.dart';
 
 class DocumentDetailScreen extends ConsumerStatefulWidget {
   final ScanDocument document;
+  final bool autoOpenOcr;
+  final OcrResult? initialOcrResult;
 
-  const DocumentDetailScreen({super.key, required this.document});
+  const DocumentDetailScreen({
+    super.key,
+    required this.document,
+    this.autoOpenOcr = false,
+    this.initialOcrResult,
+  });
 
   @override
   ConsumerState<DocumentDetailScreen> createState() => _DocumentDetailScreenState();
@@ -509,12 +517,42 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     );
   }
 
+  Future<void> _openOcrStudio() async {
+    if (widget.initialOcrResult != null) {
+      showOcrResultSheet(context, widget.initialOcrResult!, imagePath: widget.document.filePath);
+      return;
+    }
+
+    final scriptKey = ref.read(ocrScriptProvider);
+    final script = OcrService.scripts[scriptKey] ?? TextRecognitionScript.latin;
+    final ocrService = OcrService(script: script);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Analyzing document text layout for Interactive Studio...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    final structured = await ocrService.extractStructured(widget.document.filePath);
+    ocrService.dispose();
+
+    if (mounted) {
+      showOcrResultSheet(context, structured, imagePath: widget.document.filePath);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.document.title),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.touch_app_rounded, color: Color(0xFF00E5FF)),
+            onPressed: _openOcrStudio,
+            tooltip: 'Interactive OCR & Page Text Edit',
+          ),
           IconButton(
             icon: Icon(widget.document.isFavorite
                 ? Icons.star
@@ -541,6 +579,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               switch (v) {
+                case 'ocr_studio':
+                  _openOcrStudio();
+                  break;
                 case 'notes':
                   _editNotes();
                   break;
@@ -556,6 +597,16 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'ocr_studio',
+                child: Row(
+                  children: [
+                    Icon(Icons.touch_app_rounded, size: 18, color: Color(0xFF00E5FF)),
+                    SizedBox(width: 8),
+                    Text('Interactive OCR Canvas'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(value: 'notes', child: Text('Notes')),
               PopupMenuItem(
                   value: 'archive',

@@ -17,6 +17,7 @@ import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/core/services/barcode_utils.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
+import 'package:xscan/features/document/screens/document_detail_screen.dart';
 
 enum ScanMode { document, barcode, ocr }
 
@@ -1106,9 +1107,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
     if (pictures == null || pictures.isEmpty || !mounted) return;
 
-    // Show preview before saving
-    final confirmed = await _showPagePreview(pictures);
-    if (!confirmed || !mounted) return;
+    // Show preview for multi-page scans only
+    if (pictures.length > 1) {
+      final confirmed = await _showPagePreview(pictures);
+      if (!confirmed || !mounted) return;
+    }
 
     setState(() => _isProcessing = true);
 
@@ -1126,7 +1129,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
         if (buffer.isNotEmpty) buffer.write('\n\n--- Page ${i + 1} ---\n\n');
         buffer.write(text);
       }
-      ocrService.dispose();
 
       final category = _mode == ScanMode.ocr ? 'Notes' : 'Documents';
       final newDoc = ScanDocument()
@@ -1141,14 +1143,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
       await ref.read(isarServiceProvider).saveDocument(newDoc);
 
+      final structured = await ocrService.extractStructured(persistedPaths.first);
+      ocrService.dispose();
+
       if (!mounted) return;
       HapticFeedback.heavyImpact();
       setState(() => _isProcessing = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved ${persistedPaths.length} page(s) to $category')),
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentDetailScreen(
+            document: newDoc,
+            autoOpenOcr: false,
+            initialOcrResult: structured,
+          ),
+        ),
       );
-      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
@@ -1178,19 +1189,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     try {
       final persistedPath = await AppStorage.persistPage(file.path);
       final ocrService = OcrService(script: _ocrScript);
-      final text = await ocrService.extractTextFromImage(persistedPath);
+      final structured = await ocrService.extractStructured(persistedPath);
       ocrService.dispose();
 
       if (!mounted) return;
 
-      if (text == null) {
-        setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('OCR failed - the image could not be processed')),
-        );
-        return;
-      }
-      if (text.trim().isEmpty) {
+      if (structured.text.trim().isEmpty) {
         setState(() => _isProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No text found in image')),
@@ -1201,7 +1205,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       final newDoc = ScanDocument()
         ..title = 'OCR ${DateTime.now().toLocal().toString().split('.')[0]}'
         ..filePath = persistedPath
-        ..ocrText = text
+        ..ocrText = structured.text
         ..dateCreated = DateTime.now()
         ..fileType = 'scan'
         ..category = 'Notes';
@@ -1211,10 +1215,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       if (!mounted) return;
       setState(() => _isProcessing = false);
       HapticFeedback.heavyImpact();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Text extracted and saved to Notes')),
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentDetailScreen(
+            document: newDoc,
+            autoOpenOcr: false,
+            initialOcrResult: structured,
+          ),
+        ),
       );
-      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);

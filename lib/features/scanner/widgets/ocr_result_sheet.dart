@@ -1,28 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:google_mlkit_translation/google_mlkit_translation.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
+import 'package:xscan/core/services/pdf_service.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
+import 'package:xscan/features/scanner/widgets/interactive_ocr_canvas.dart';
 import 'package:xscan/features/tools/services/tool_io.dart';
 
-/// Shows an executive interactive OCR result bottom sheet with Text-to-Speech,
-/// structured entity chips, on-device translation, and export options.
-void showOcrResultSheet(BuildContext context, OcrResult result) {
+enum OcrStudioMode { canvas, reflow, split }
+
+/// Shows an executive interactive OCR result bottom sheet studio with mode selection,
+/// Text-to-Speech, and PDF export.
+void showOcrResultSheet(BuildContext context, OcrResult result, {String? imagePath}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _OcrResultSheetWidget(result: result),
+    builder: (ctx) => _OcrResultSheetWidget(
+      result: result,
+      imagePath: imagePath ?? result.imagePath,
+    ),
   );
 }
 
 class _OcrResultSheetWidget extends StatefulWidget {
   final OcrResult result;
+  final String? imagePath;
 
-  const _OcrResultSheetWidget({required this.result});
+  const _OcrResultSheetWidget({
+    required this.result,
+    this.imagePath,
+  });
 
   @override
   State<_OcrResultSheetWidget> createState() => _OcrResultSheetWidgetState();
@@ -31,25 +40,13 @@ class _OcrResultSheetWidget extends StatefulWidget {
 class _OcrResultSheetWidgetState extends State<_OcrResultSheetWidget> {
   late FlutterTts _tts;
   bool _isPlaying = false;
-  String _activeText = '';
-  String _translatedText = '';
-  bool _isTranslating = false;
-  TranslateLanguage _targetLang = TranslateLanguage.spanish;
-
-  final Map<String, TranslateLanguage> _languages = {
-    'Spanish': TranslateLanguage.spanish,
-    'Arabic': TranslateLanguage.arabic,
-    'French': TranslateLanguage.french,
-    'German': TranslateLanguage.german,
-    'Chinese': TranslateLanguage.chinese,
-    'Hindi': TranslateLanguage.hindi,
-    'Japanese': TranslateLanguage.japanese,
-  };
+  late String _activeText;
+  final OcrStudioMode _currentMode = OcrStudioMode.canvas;
 
   @override
   void initState() {
     super.initState();
-    _activeText = widget.result.text;
+    _activeText = widget.result.fullEditedText;
     _initTts();
   }
 
@@ -80,52 +77,15 @@ class _OcrResultSheetWidgetState extends State<_OcrResultSheetWidget> {
     }
   }
 
-  Future<void> _translateText(TranslateLanguage target) async {
-    if (_activeText.isEmpty) return;
-    setState(() {
-      _isTranslating = true;
-      _targetLang = target;
-    });
-
-    try {
-      final modelManager = OnDeviceTranslatorModelManager();
-      final isDownloaded = await modelManager.isModelDownloaded(target.bcpCode);
-      if (!isDownloaded) {
-        await modelManager.downloadModel(target.bcpCode);
-      }
-
-      final translator = OnDeviceTranslator(
-        sourceLanguage: TranslateLanguage.english,
-        targetLanguage: target,
-      );
-
-      final translated = await translator.translateText(_activeText);
-      await translator.close();
-
-      if (mounted) {
-        setState(() {
-          _translatedText = translated;
-          _isTranslating = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isTranslating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Translation failed: $e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final entities = widget.result.entities;
-    final displayText = _translatedText.isNotEmpty ? _translatedText : _activeText;
+    final displayText = _activeText;
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: MediaQuery.of(context).size.height * 0.90,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF141824) : Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -143,20 +103,22 @@ class _OcrResultSheetWidgetState extends State<_OcrResultSheetWidget> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                const Icon(Icons.text_snippet, color: Color(0xFF00E5FF)),
+                const Icon(Icons.auto_awesome, color: Color(0xFF00E5FF)),
                 const SizedBox(width: 10),
-                const Text(
-                  'Extracted Text (OCR)',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  'Interactive OCR Studio',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
                   icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.volume_up),
                   color: const Color(0xFF00E5FF),
-                  iconSize: 28,
+                  iconSize: 26,
                   onPressed: _toggleSpeech,
                   tooltip: _isPlaying ? 'Pause Speech' : 'Listen Text-To-Speech',
                 ),
@@ -167,104 +129,18 @@ class _OcrResultSheetWidgetState extends State<_OcrResultSheetWidget> {
               ],
             ),
           ),
+
+          const SizedBox(height: 4),
           const Divider(height: 1),
 
+          // Body Content based on Mode
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Entity Extraction Chips (Emails, Phones, URLs, Amounts)
-                if (!entities.isEmpty) ...[
-                  const Text('Recognized Entities',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ...entities.emails.map((e) => ActionChip(
-                            avatar: const Icon(Icons.email, size: 14),
-                            label: Text(e),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: e));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Email copied: $e')),
-                              );
-                            },
-                          )),
-                      ...entities.phones.map((p) => ActionChip(
-                            avatar: const Icon(Icons.phone, size: 14),
-                            label: Text(p),
-                            onPressed: () => launchUrl(Uri.parse('tel:$p')),
-                          )),
-                      ...entities.urls.map((u) => ActionChip(
-                            avatar: const Icon(Icons.link, size: 14),
-                            label: Text(u),
-                            onPressed: () => launchUrl(Uri.parse(u)),
-                          )),
-                      ...entities.amounts.map((a) => Chip(
-                            avatar: const Icon(Icons.attach_money, size: 14, color: Colors.green),
-                            label: Text(a, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          )),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // On-Device Translation Bar
-                Row(
-                  children: [
-                    const Icon(Icons.g_translate, size: 18),
-                    const SizedBox(width: 8),
-                    const Text('Translate:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _languages.entries.map((entry) {
-                            final selected = _targetLang == entry.value && _translatedText.isNotEmpty;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ChoiceChip(
-                                label: Text(entry.key, style: const TextStyle(fontSize: 11)),
-                                selected: selected,
-                                onSelected: (_) => _translateText(entry.value),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (_isTranslating)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: LinearProgressIndicator(),
-                  ),
-                const SizedBox(height: 12),
-
-                // Extracted Text View Box
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1B2030) : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-                  ),
-                  child: SelectableText(
-                    displayText,
-                    style: const TextStyle(fontSize: 14, height: 1.4),
-                  ),
-                ),
-              ],
-            ),
+            child: _buildStudioBody(context, displayText, entities),
           ),
 
-          // Bottom Quick Action Buttons
+          // Bottom Action Bar
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1B2030) : Colors.grey.shade100,
               border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.2))),
@@ -279,25 +155,302 @@ class _OcrResultSheetWidgetState extends State<_OcrResultSheetWidget> {
                         const SnackBar(content: Text('Text copied to clipboard')),
                       );
                     },
-                    icon: const Icon(Icons.copy),
-                    label: const Text('Copy'),
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: const Text('Copy All'),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _exportWordDocx,
+                    icon: const Icon(Icons.description_rounded, size: 18, color: Color(0xFF185ABD)),
+                    label: const Text('Export Word'),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: () async {
-                      final path = await AppStorage.writeExport(
-                        'ocr_text.txt',
-                        displayText.codeUnits,
-                      );
-                      ToolIO.share(path);
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        final pdfService = PdfService();
+                        final path = await pdfService.generateSearchablePdfFromOcr(widget.result);
+                        ToolIO.share(path);
+                      } catch (e) {
+                        messenger.showSnackBar(
+                          SnackBar(content: Text('PDF export failed: $e')),
+                        );
+                      }
                     },
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share TXT'),
+                    icon: const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Export PDF'),
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportWordDocx() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final title = widget.result.lines.isNotEmpty ? widget.result.lines.first.currentText : 'OCR Document';
+      final buffer = StringBuffer();
+      buffer.writeln('{\\rtf1\\ansi\\deff0');
+      buffer.writeln('{\\fonttbl{\\f0 Arial;}}');
+      buffer.writeln('\\f0\\fs28\\b $title\\b0\\par\\par');
+      
+      for (final line in widget.result.lines) {
+        final clean = line.currentText
+            .replaceAll('\\', '\\\\')
+            .replaceAll('{', '\\{')
+            .replaceAll('}', '\\}');
+        buffer.writeln('$clean\\par');
+      }
+      buffer.writeln('}');
+
+      final path = await AppStorage.writeExport(
+        'scanned_document.docx',
+        buffer.toString().codeUnits,
+      );
+      ToolIO.share(path);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Word export failed: $e')),
+      );
+    }
+  }
+
+  Widget _buildStudioBody(
+    BuildContext context,
+    String displayText,
+    OcrEntities entities,
+  ) {
+    switch (_currentMode) {
+      case OcrStudioMode.canvas:
+        return InteractiveOcrCanvas(
+          result: widget.result,
+          imagePath: widget.imagePath,
+          onLineUpdated: (line) {
+            setState(() {
+              _activeText = widget.result.fullEditedText;
+            });
+          },
+        );
+
+      case OcrStudioMode.reflow:
+        return _buildMsWordDocumentPage(context, displayText, entities);
+
+      case OcrStudioMode.split:
+        return Column(
+          children: [
+            Expanded(
+              flex: 5,
+              child: InteractiveOcrCanvas(
+                result: widget.result,
+                imagePath: widget.imagePath,
+                onLineUpdated: (line) {
+                  setState(() {
+                    _activeText = widget.result.fullEditedText;
+                  });
+                },
+              ),
+            ),
+            const Divider(height: 1, thickness: 2, color: Colors.blueAccent),
+            Expanded(
+              flex: 5,
+              child: _buildMsWordDocumentPage(context, displayText, entities),
+            ),
+          ],
+        );
+    }
+  }
+
+  /// Builds an MS Word-style paper document page with margins, formatting header,
+  /// word count, and structured inline paragraph editing.
+  Widget _buildMsWordDocumentPage(
+    BuildContext context,
+    String displayText,
+    OcrEntities entities,
+  ) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final wordCount = displayText
+        .split(RegExp(r'\s+'))
+        .where((w) => w.trim().isNotEmpty)
+        .length;
+
+    final paperBg = isDark ? const Color(0xFF1E2433) : Colors.white;
+    final paperTextColor = isDark ? Colors.grey.shade100 : const Color(0xFF1A1A1A);
+
+    return Container(
+      color: isDark ? const Color(0xFF0F121C) : const Color(0xFFEFEFEF),
+      child: Column(
+        children: [
+          // MS Word Toolbar / Document Status Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF161B26) : Colors.white,
+              border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.2))),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF185ABD), // MS Word Blue
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.description_rounded, size: 16, color: Colors.white),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'MS Word Page View',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.blue.shade900.withValues(alpha: 0.4) : Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    '$wordCount words • Page 1',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.blue.shade200 : Colors.blue.shade900,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (!entities.isEmpty)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.hub_rounded, size: 20),
+                    tooltip: 'Entities Found',
+                    itemBuilder: (context) => [
+                      ...entities.emails.map((e) => PopupMenuItem(value: e, child: Text('Email: $e'))),
+                      ...entities.phones.map((p) => PopupMenuItem(value: p, child: Text('Phone: $p'))),
+                      ...entities.urls.map((u) => PopupMenuItem(value: u, child: Text('Link: $u'))),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+
+          // Scrollable Word Paper Document Page Sheet
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Center(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  decoration: BoxDecoration(
+                    color: paperBg,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade300),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Document Header Stamp
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'DOCUMENT REFLOW',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.5,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                          Text(
+                            DateTime.now().toLocal().toString().split(' ')[0],
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 20, thickness: 1),
+                      const SizedBox(height: 8),
+
+                      // Document Lines / Paragraphs (Editable Word Layout)
+                      if (widget.result.lines.isEmpty)
+                        SelectableText(
+                          displayText,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            color: paperTextColor,
+                            fontFamily: 'Roboto',
+                          ),
+                        )
+                      else
+                        ...widget.result.lines.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final line = entry.value;
+                          final isTitle = index == 0 && line.currentText.length < 40;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: TextFormField(
+                              initialValue: line.currentText,
+                              maxLines: null,
+                              style: TextStyle(
+                                fontSize: isTitle ? 18 : 14,
+                                fontWeight: isTitle || line.isEdited ? FontWeight.bold : FontWeight.normal,
+                                height: 1.5,
+                                color: line.isEdited ? Colors.blue.shade700 : paperTextColor,
+                                fontFamily: 'Roboto',
+                              ),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                border: InputBorder.none,
+                                hoverColor: Colors.blue.withValues(alpha: 0.05),
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(color: Colors.blue.shade400, width: 1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              onChanged: (val) {
+                                setState(() {
+                                  line.currentText = val;
+                                  _activeText = widget.result.fullEditedText;
+                                });
+                              },
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],

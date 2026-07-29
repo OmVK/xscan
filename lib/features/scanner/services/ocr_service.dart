@@ -27,14 +27,102 @@ class OcrEntities {
       amounts.isEmpty;
 }
 
-/// A recognized line of text with its bounding box (in source-image pixels).
+enum OcrLineKind { text, checkbox, bullet, star }
+
+/// A recognized line of text with smart symbol detection, bounding box, and edit state.
 class OcrLine {
-  OcrLine(this.text, this.box);
+  OcrLine(
+    this.text,
+    this.box, {
+    String? editedText,
+    this.isWhiteout = true,
+    this.textColor = const ui.Color(0xFF1F2937),
+    this.backgroundColor = const ui.Color(0xFFFFFFFF),
+    this.fontSize,
+    OcrLineKind? initialKind,
+    bool? initialChecked,
+  })  : currentText = editedText ?? text,
+        kind = initialKind ?? _detectKind(editedText ?? text),
+        isChecked = initialChecked ?? _detectChecked(editedText ?? text);
+
+  /// Helper factory for adding user-created custom text boxes anywhere on the canvas
+  factory OcrLine.newText(String text, {required double x, required double y}) {
+    final box = ui.Rect.fromLTWH(x, y, 200, 36);
+    return OcrLine(
+      text,
+      box,
+      isWhiteout: true,
+      textColor: const ui.Color(0xFF1F2937),
+      backgroundColor: const ui.Color(0xFFFFFFFF),
+    )..customLeft = x
+     ..customTop = y;
+  }
+
   final String text;
+  String currentText;
   final ui.Rect box;
+  bool isWhiteout;
+  ui.Color textColor;
+  ui.Color backgroundColor;
+  double? fontSize;
+  OcrLineKind kind;
+  bool isChecked;
+
+  double? customLeft;
+  double? customTop;
+  double? customWidth;
+  double? customHeight;
+
+  double get effectiveLeft => customLeft ?? box.left;
+  double get effectiveTop => customTop ?? box.top;
+  double get effectiveWidth => customWidth ?? box.width;
+  double get effectiveHeight => customHeight ?? box.height;
+
+  bool get isEdited =>
+      currentText != text ||
+      customLeft != null ||
+      customTop != null ||
+      customWidth != null ||
+      customHeight != null;
+
+  void resetPosition() {
+    customLeft = null;
+    customTop = null;
+    customWidth = null;
+    customHeight = null;
+  }
+
+  static OcrLineKind _detectKind(String str) {
+    final t = str.trim();
+    if (RegExp(r'^(\[[\sxXvV]\]|[\u2610\u2611\u2612\u25A0\u25A1]|\([\sxX]\))').hasMatch(t)) {
+      return OcrLineKind.checkbox;
+    }
+    if (RegExp(r'^([\u2022\u25CF\u25CB\u25A0\*]|\d+[\.\)]|[a-zA-Z][\.\)])').hasMatch(t)) {
+      return OcrLineKind.bullet;
+    }
+    if (RegExp(r'[\u2605\u2606]').hasMatch(t)) {
+      return OcrLineKind.star;
+    }
+    return OcrLineKind.text;
+  }
+
+  static bool _detectChecked(String str) {
+    final t = str.trim();
+    return RegExp(r'^(\[[xXvV]\]|\u2611|\([xX]\))').hasMatch(t);
+  }
+
+  void toggleCheckbox() {
+    if (kind != OcrLineKind.checkbox) {
+      kind = OcrLineKind.checkbox;
+    }
+    isChecked = !isChecked;
+    final prefix = isChecked ? '[x] ' : '[ ] ';
+    final clean = currentText.replaceAll(RegExp(r'^(\[[\sxXvV]\]|[\u2610\u2611\u2612\u25A0\u25A1]|\([\sxX]\))\s*'), '');
+    currentText = '$prefix$clean';
+  }
 }
 
-/// OCR result for a single image, including the image's pixel dimensions.
+/// OCR result for a single image, including the image's pixel dimensions and file path.
 class OcrResult {
   OcrResult({
     required this.text,
@@ -42,13 +130,18 @@ class OcrResult {
     required this.imageWidth,
     required this.imageHeight,
     required this.entities,
+    this.imagePath,
   });
 
-  final String text;
+  String text;
   final List<OcrLine> lines;
   final int imageWidth;
   final int imageHeight;
   final OcrEntities entities;
+  final String? imagePath;
+
+  /// Returns full text dynamically reconstructed from current (edited) lines.
+  String get fullEditedText => lines.map((l) => l.currentText).join('\n');
 }
 
 class OcrService {
@@ -100,6 +193,7 @@ class OcrService {
       imageWidth: size.width.round(),
       imageHeight: size.height.round(),
       entities: entities,
+      imagePath: imagePath,
     );
   }
 

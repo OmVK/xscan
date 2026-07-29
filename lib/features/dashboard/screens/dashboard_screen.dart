@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -52,6 +53,8 @@ import 'package:xscan/features/scanner/widgets/ocr_result_sheet.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:xscan/core/services/pdf_service.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -675,6 +678,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             );
           },
+          onLongPress: () {
+            _showDocumentContextMenu(context, doc);
+          },
           child: Hero(
             tag: doc.id.toString(),
             child: Container(
@@ -843,7 +849,167 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           );
         },
+        onLongPress: () {
+          _showDocumentContextMenu(context, doc);
+        },
       ),
+    );
+  }
+
+  void _showDocumentContextMenu(BuildContext context, ScanDocument doc) {
+    HapticFeedback.mediumImpact();
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1F2C) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: doc.filePath.isNotEmpty && _fileExists(doc.filePath)
+                        ? Image.file(
+                            File(doc.filePath),
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            width: 48,
+                            height: 48,
+                            color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                            child: Icon(Icons.article_rounded, color: theme.colorScheme.primary),
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          doc.title,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${doc.category} • ${doc.dateCreated.toLocal().toString().split('.')[0]}',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+
+              // Share Action
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.share_rounded, color: Colors.blue, size: 20),
+                ),
+                title: const Text('Share File', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Export & send PDF or document'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (doc.filePath.isNotEmpty && _fileExists(doc.filePath)) {
+                    final pdfService = PdfService();
+                    final pdfPath = await pdfService.generatePdfFromDocument(doc);
+                    await SharePlus.instance.share(ShareParams(
+                      files: [XFile(pdfPath)],
+                      text: 'Shared from XScan: ${doc.title}',
+                    ));
+                  }
+                },
+              ),
+
+              // Favorite Action
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    doc.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: Colors.amber.shade700,
+                    size: 20,
+                  ),
+                ),
+                title: Text(doc.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  doc.isFavorite = !doc.isFavorite;
+                  await ref.read(isarServiceProvider).saveDocument(doc);
+                },
+              ),
+
+              // Delete Action
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 20),
+                ),
+                title: const Text('Delete File',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.redAccent)),
+                subtitle: const Text('Permanently remove this document'),
+                onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  Navigator.pop(ctx);
+                  final confirm = await showConfirmDialog(
+                    context,
+                    title: 'Delete "${doc.title}"?',
+                    content: 'Are you sure you want to delete this document?',
+                    confirmLabel: 'Delete',
+                  );
+                  if (confirm) {
+                    await ref.read(isarServiceProvider).deleteDocument(doc.id);
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Deleted "${doc.title}"')),
+                      );
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 

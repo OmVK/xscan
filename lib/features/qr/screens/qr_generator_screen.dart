@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/features/tools/services/tool_io.dart';
@@ -187,6 +190,9 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   double _logoSize = 0.20; // 20% max size for 100% scannability
   bool _useGradient = false;
   List<Color>? _activeGradient;
+  bool _enableFrameBanner = false;
+  String _frameText = 'SCAN ME';
+  Color? _customEyeColor;
 
   QrDesign get _design => _qrDesigns[_designIndex];
 
@@ -467,23 +473,27 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       final qrColor = (_useGradient && _activeGradient != null)
           ? Colors.white
           : _fg;
+      final eyeColor = _customEyeColor ?? qrColor;
+
+      final embeddedSize = logo == null
+          ? null
+          : Size(
+              1024 * (_logoSize.clamp(0.12, 0.22)) * 1.2,
+              1024 * (_logoSize.clamp(0.12, 0.22)) * 1.2,
+            );
+
       final painter = QrPainter(
         data: _data,
         version: QrVersions.auto,
         errorCorrectionLevel: QrErrorCorrectLevel.H, // Always High 30% error recovery for 100% scannability
         gapless: true,
-        eyeStyle: QrEyeStyle(eyeShape: _design.eyeShape, color: qrColor),
+        eyeStyle: QrEyeStyle(eyeShape: _design.eyeShape, color: eyeColor),
         dataModuleStyle: QrDataModuleStyle(
             dataModuleShape: _design.dataShape, color: qrColor),
         embeddedImage: logo,
-        embeddedImageStyle: logo == null
+        embeddedImageStyle: embeddedSize == null
             ? null
-            : QrEmbeddedImageStyle(
-                size: Size(
-                  1024 * (_logoSize.clamp(0.12, 0.22)),
-                  1024 * (_logoSize.clamp(0.12, 0.22)),
-                ),
-              ),
+            : QrEmbeddedImageStyle(size: embeddedSize),
       );
       return painter.toImage(1024);
     } catch (_) {
@@ -503,35 +513,120 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     setState(() => _logoBytes = bytes);
   }
 
-  Future<void> _setPresetIconLogo(IconData iconData, Color color) async {
+  Future<void> _setPresetIconLogo(String brand, IconData iconData, Color color) async {
     try {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       const size = 256.0;
 
-      // Draw background circle
-      final bgPaint = Paint()..color = color;
-      canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, bgPaint);
+      if (brand == 'WhatsApp') {
+        // Exact WhatsApp Logo matching user image (White background + Green speech bubble outline + Green phone handset)
+        const greenColor = Color(0xFF25D366);
 
-      // Render TextIcon
-      final textPainter = TextPainter(textDirection: TextDirection.ltr);
-      textPainter.text = TextSpan(
-        text: String.fromCharCode(iconData.codePoint),
-        style: TextStyle(
-          fontSize: 140,
-          fontFamily: iconData.fontFamily,
-          package: iconData.fontPackage,
-          color: Colors.white,
-        ),
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(
-          (size - textPainter.width) / 2,
-          (size - textPainter.height) / 2,
-        ),
-      );
+        // White background circle
+        canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, Paint()..color = Colors.white);
+
+        // Green Outer Speech Bubble Path
+        final bubblePath = Path();
+        final center = const Offset(size / 2, size / 2);
+        const radius = 86.0;
+        bubblePath.addOval(Rect.fromCircle(center: center, radius: radius));
+        bubblePath.moveTo(center.dx - radius * 0.65, center.dy + radius * 0.65);
+        bubblePath.lineTo(center.dx - radius * 1.05, center.dy + radius * 1.05);
+        bubblePath.lineTo(center.dx - radius * 0.40, center.dy + radius * 0.90);
+        bubblePath.close();
+
+        // Green outline stroke
+        canvas.drawPath(
+          bubblePath,
+          Paint()
+            ..color = greenColor
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 18,
+        );
+
+        // Green Phone Handset inside
+        final textPainter = TextPainter(textDirection: TextDirection.ltr);
+        textPainter.text = TextSpan(
+          text: String.fromCharCode(Icons.call.codePoint),
+          style: TextStyle(
+            fontSize: 88,
+            fontFamily: Icons.call.fontFamily,
+            package: Icons.call.fontPackage,
+            color: greenColor,
+          ),
+        );
+        textPainter.layout();
+        textPainter.paint(
+          canvas,
+          Offset(
+            center.dx - textPainter.width / 2,
+            center.dy - textPainter.height / 2,
+          ),
+        );
+      } else if (brand == 'Instagram') {
+        // Authentic Instagram Multi-Color Gradient Logo (Purple/Red/Yellow Gradient + Camera Glyph)
+        final gradPaint = Paint()
+          ..shader = ui.Gradient.linear(
+            const Offset(0, size),
+            const Offset(size, 0),
+            const [
+              Color(0xFF833AB4),
+              Color(0xFFFD1D1D),
+              Color(0xFFFCB045),
+            ],
+          );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            const Rect.fromLTWH(0, 0, size, size),
+            const Radius.circular(60),
+          ),
+          gradPaint,
+        );
+
+        final strokePaint = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 14;
+
+        // Outer Camera Frame
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: const Offset(128, 128), width: 140, height: 140),
+            const Radius.circular(38),
+          ),
+          strokePaint,
+        );
+
+        // Center Lens Circle
+        canvas.drawCircle(const Offset(128, 128), 34, strokePaint);
+
+        // Flash Dot
+        canvas.drawCircle(const Offset(168, 88), 9, Paint()..color = Colors.white);
+      } else {
+        // General Brand Circle
+        final bgPaint = Paint()..color = color;
+        canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, bgPaint);
+
+        final textPainter = TextPainter(textDirection: TextDirection.ltr);
+        textPainter.text = TextSpan(
+          text: String.fromCharCode(iconData.codePoint),
+          style: TextStyle(
+            fontSize: 140,
+            fontFamily: iconData.fontFamily,
+            package: iconData.fontPackage,
+            color: Colors.white,
+          ),
+        );
+        textPainter.layout();
+        textPainter.paint(
+          canvas,
+          Offset(
+            (size - textPainter.width) / 2,
+            (size - textPainter.height) / 2,
+          ),
+        );
+      }
 
       final picture = recorder.endRecording();
       final image = await picture.toImage(size.toInt(), size.toInt());
@@ -572,6 +667,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
       final qrImage = await _renderQrMatrix();
       if (qrImage == null) return null;
       final bgImg = await _decodeBgImage();
+      final logoImg = await _decodeLogo();
       final size = _exportSize;
       final pad = _includeQuietZone ? size * 0.07 : size * 0.02;
       final recorder = ui.PictureRecorder();
@@ -613,28 +709,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
 
       final qrRect = Rect.fromLTWH(pad, pad, size - pad * 2, size - pad * 2);
 
-      // Draw white circular protective shield behind center logo if logo present
-      if (_logoBytes != null) {
-        final logoDim = qrRect.width * (_logoSize.clamp(0.12, 0.22));
-        final shieldDim = logoDim * 1.25;
-        final shieldRect = Rect.fromCenter(
-          center: Offset(size / 2, size / 2),
-          width: shieldDim,
-          height: shieldDim,
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.25)),
-          Paint()..color = Colors.white,
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.25)),
-          Paint()
-            ..color = Colors.grey.withValues(alpha: 0.30)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2,
-        );
-      }
-
+      // Render QR Data Matrix
       if (_useGradient && _activeGradient != null && _activeGradient!.length >= 2) {
         final qrPaint = Paint()
           ..shader = ui.Gradient.linear(
@@ -660,12 +735,193 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
         );
       }
 
+      // Draw clean white protective shield card & logo on TOP of QR matrix so dots surround logo cleanly
+      if (logoImg != null) {
+        final logoDim = qrRect.width * (_logoSize.clamp(0.12, 0.22));
+        final shieldDim = logoDim * 1.35;
+        final shieldRect = Rect.fromCenter(
+          center: Offset(size / 2, size / 2),
+          width: shieldDim,
+          height: shieldDim,
+        );
+
+        // White protective card clearing out all center data dots
+        final shadowPath = Path()
+          ..addRRect(RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.28)));
+        canvas.drawShadow(shadowPath, Colors.black.withValues(alpha: 0.25), 3.0, true);
+
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.28)),
+          Paint()..color = Colors.white,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(shieldRect, Radius.circular(shieldDim * 0.28)),
+          Paint()
+            ..color = Colors.grey.withValues(alpha: 0.25)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+
+        // Render Center Logo inside protective card
+        final logoRect = Rect.fromCenter(
+          center: Offset(size / 2, size / 2),
+          width: logoDim,
+          height: logoDim,
+        );
+        paintImage(
+          canvas: canvas,
+          rect: logoRect,
+          image: logoImg,
+          fit: BoxFit.contain,
+        );
+      }
+
+      // Draw CTA Frame Banner badge on canvas if enabled
+      if (_enableFrameBanner && _frameText.trim().isNotEmpty) {
+        final textPainter = TextPainter(textDirection: TextDirection.ltr);
+        textPainter.text = TextSpan(
+          text: _frameText.trim().toUpperCase(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2.0,
+          ),
+        );
+        textPainter.layout();
+
+        final bannerWidth = textPainter.width + 56;
+        final bannerHeight = textPainter.height + 24;
+        final bannerRect = Rect.fromCenter(
+          center: Offset(size / 2, size - pad * 1.4),
+          width: bannerWidth.clamp(140.0, size * 0.85),
+          height: bannerHeight,
+        );
+
+        final badgePath = Path()
+          ..addRRect(RRect.fromRectAndRadius(bannerRect, Radius.circular(bannerHeight / 2)));
+        canvas.drawShadow(badgePath, Colors.black.withValues(alpha: 0.40), 6.0, true);
+
+        final badgePaint = Paint()..color = (_customEyeColor ?? _fg);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(bannerRect, Radius.circular(bannerHeight / 2)),
+          badgePaint,
+        );
+
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(bannerRect, Radius.circular(bannerHeight / 2)),
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.35)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+
+        textPainter.paint(
+          canvas,
+          Offset(
+            bannerRect.center.dx - textPainter.width / 2,
+            bannerRect.center.dy - textPainter.height / 2,
+          ),
+        );
+      }
+
       final picture = recorder.endRecording();
       final image = await picture.toImage(size.toInt(), size.toInt());
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _exportPrintablePdfSheet() async {
+    try {
+      final pngBytes = await _pngBytes();
+      if (pngBytes == null) return;
+
+      final pdf = pw.Document();
+      final image = pw.MemoryImage(Uint8List.fromList(pngBytes));
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return pw.Padding(
+              padding: const pw.EdgeInsets.all(24),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'XScan Studio QR Sheet',
+                    style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Printable QR Cards & Stickers (${DateTime.now().toString().split(' ')[0]})',
+                    style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+                  ),
+                  pw.SizedBox(height: 20),
+                  pw.Expanded(
+                    child: pw.GridView(
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.85,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      children: List.generate(6, (index) {
+                        return pw.Container(
+                          padding: const pw.EdgeInsets.all(12),
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                            borderRadius: pw.BorderRadius.circular(12),
+                          ),
+                          child: pw.Column(
+                            mainAxisAlignment: pw.MainAxisAlignment.center,
+                            children: [
+                              pw.Container(
+                                width: 140,
+                                height: 140,
+                                child: pw.Image(image),
+                              ),
+                              pw.SizedBox(height: 8),
+                              pw.Text(
+                                _enableFrameBanner ? _frameText : 'SCAN ME',
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              pw.SizedBox(height: 2),
+                              pw.Text(
+                                _typeLabel(_type),
+                                style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      final output = await getTemporaryDirectory();
+      final file = File('${output.path}/qr_printable_sheet.pdf');
+      await file.writeAsBytes(await pdf.save());
+
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        text: 'Printable QR Sheet from XScan Studio',
+      ));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate PDF sheet: $e')),
+        );
+      }
     }
   }
 
@@ -858,6 +1114,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
           _themeSelector(),
           const SizedBox(height: 12),
           _colorRow('Foreground', _fg, (c) => setState(() => _fg = c)),
+          _colorRow('Eye Corners', _customEyeColor ?? _fg, (c) => setState(() => _customEyeColor = c)),
           _colorRow('Background', _bg, (c) => setState(() { _bg = c; _bgImageBytes = null; })),
 
           if (_activeGradient != null)
@@ -870,6 +1127,29 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             ),
 
           const SizedBox(height: 8),
+
+          _sectionLabel('Call-To-Action Banner ("SCAN ME")'),
+          SwitchListTile(
+            title: const Text('Enable Banner Badge', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            value: _enableFrameBanner,
+            onChanged: (v) => setState(() => _enableFrameBanner = v),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+          if (_enableFrameBanner) ...[
+            const SizedBox(height: 4),
+            TextField(
+              controller: _ctrl('frame_text'),
+              decoration: const InputDecoration(
+                labelText: 'Banner Text',
+                hintText: 'e.g. SCAN ME, CONNECT TO WI-FI',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (val) => setState(() => _frameText = val),
+            ),
+            const SizedBox(height: 8),
+          ],
 
           _sectionLabel('Background Image'),
           _bgImageRow(),
@@ -1036,7 +1316,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Semantics(
                     label: 'Share QR code',
@@ -1051,9 +1331,17 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                         await _saveToHistory(bytes);
                         ToolIO.share(path);
                       },
-                      icon: const Icon(Icons.share),
+                      icon: const Icon(Icons.share, size: 18),
                       label: const Text('Share'),
                     ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: _exportPrintablePdfSheet,
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                    label: const Text('A4 Sheet'),
                   ),
                 ),
               ],
@@ -1065,32 +1353,40 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   }
 
   Widget _presetLogoSelector() {
-    final presets = <(String, IconData, Color)>[
-      ('WhatsApp', Icons.chat_bubble, const Color(0xFF25D366)),
-      ('Instagram', Icons.camera_alt, const Color(0xFFE4405F)),
-      ('Facebook', Icons.facebook, const Color(0xFF1877F2)),
-      ('LinkedIn', Icons.work, const Color(0xFF0A66C2)),
-      ('Wi-Fi', Icons.wifi, const Color(0xFF00B894)),
-      ('Phone', Icons.phone, const Color(0xFF0984E3)),
-      ('Email', Icons.email, const Color(0xFFE17055)),
-      ('Location', Icons.location_on, const Color(0xFFE84393)),
-      ('Globe', Icons.language, const Color(0xFF6C63FF)),
+    final brandLogos = [
+      ('WhatsApp', Icons.chat_bubble_rounded, const Color(0xFF25D366)),
+      ('Instagram', Icons.camera_alt_rounded, const Color(0xFFE1306C)),
+      ('Facebook', Icons.facebook_rounded, const Color(0xFF1877F2)),
+      ('LinkedIn', Icons.work_rounded, const Color(0xFF0A66C2)),
+      ('Telegram', Icons.send_rounded, const Color(0xFF229ED9)),
+      ('Wi-Fi', Icons.wifi_rounded, const Color(0xFF00B894)),
+      ('Phone', Icons.phone_rounded, const Color(0xFFFF9100)),
+      ('Website', Icons.language_rounded, const Color(0xFF00E5FF)),
+      ('Email', Icons.email_rounded, const Color(0xFFE040FB)),
     ];
 
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: presets.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final p = presets[i];
-          return ActionChip(
-            avatar: Icon(p.$2, size: 16, color: p.$3),
-            label: Text(p.$1, style: const TextStyle(fontSize: 12)),
-            onPressed: () => _setPresetIconLogo(p.$2, p.$3),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: brandLogos.map((item) {
+          final label = item.$1;
+          final iconData = item.$2;
+          final color = item.$3;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ActionChip(
+              avatar: CircleAvatar(
+                backgroundColor: color,
+                radius: 10,
+                child: Icon(iconData, size: 11, color: Colors.white),
+              ),
+              label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+              onPressed: () {
+                _setPresetIconLogo(label, iconData, color);
+              },
+            ),
           );
-        },
+        }).toList(),
       ),
     );
   }
@@ -1383,7 +1679,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
               TextButton.icon(
                 onPressed: _pickLogo,
                 icon: const Icon(Icons.add_photo_alternate, size: 18),
-                label: Text(_logoBytes == null ? 'Add' : 'Change'),
+                label: Text(_logoBytes == null ? 'Custom photo' : 'Change photo'),
               ),
               if (_logoBytes != null)
                 TextButton.icon(
