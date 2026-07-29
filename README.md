@@ -6,8 +6,8 @@
 
 Scan, edit, sign, convert, translate, and protect your documents — completely offline.
 
-[![Download](https://img.shields.io/badge/Download-v1.2.0%20Release-6C63FF?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v1.2.0)
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v1.2.0)
+[![Download](https://img.shields.io/badge/Download-v1.3.0%20Release-6C63FF?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v1.3.0)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v1.3.0)
 ![Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?style=for-the-badge&logo=flutter)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
@@ -17,7 +17,7 @@ Scan, edit, sign, convert, translate, and protect your documents — completely 
 
 ## Download
 
-Grab the latest production APK from the [**Releases page**](https://github.com/OmVK/xscan/releases/tag/v1.2.0):
+Grab the latest production APK from the [**Releases page**](https://github.com/OmVK/xscan/releases/tag/v1.3.0):
 
 | File | Best for | Size |
 | --- | --- | --- |
@@ -27,31 +27,23 @@ Grab the latest production APK from the [**Releases page**](https://github.com/O
 
 ---
 
-## What's New in v1.2.0
+## What's New in v1.3.0
 
-### 💎 Executive Dark Glass UI System
-- **Executive Dark Slate Backdrop**: Clean canvas (`#090C15` to `#0B0E17`) featuring a custom 3D metallic **XSCAN** brand wallpaper and atmospheric cyan/indigo ambient mesh glows.
-- **Apple / macOS Frosted Glass Cards**: `18px` backdrop blur (`BackdropFilter`), 1.0px specular glass borders (`Colors.white.withValues(alpha: 0.12)`), and high-contrast typography.
-- **Executive Greeting & Status Pills**: Dynamic time-of-day greeting (`Good Morning / Afternoon / Evening, Executive`) with sun/moon indicators and biometric security badges (`🔒 Biometric Vault Active`).
-- **1-Tap Hero Quick Action Bar**: Instant launcher for **Scan Doc**, **Edit PDF**, **Scan QR**, and **Quick OCR**.
+### 🎯 Studio QR Creator Suite
+- **Authentic Brand Logos**: Official vector rendering for **WhatsApp** (white background, green speech bubble, green phone handset tilted at 45°) and **Instagram** (multi-color purple/red/yellow gradient background with white camera lens & flash glyph).
+- **Call-To-Action Banner Badges ("SCAN ME")**: Renders custom CTA text badges (`"SCAN ME"`, `"CONNECT TO WI-FI"`, `"CHAT ON WHATSAPP"`) natively on canvas exports.
+- **Dual-Tone Eye Corner Customizer**: Independent color picker for QR eye corners (e.g. Electric Cyan eyes with Dark Navy QR body).
+- **Printable A4 Multi-QR PDF Sheets**: 1-tap export to A4 PDF with 6-up grid layout complete with cut borders and titles for stickers, table tents, and event badges.
+- **100% Native Module Clearing**: Omits QR matrix dots in the center region so dots form a clean surrounding ring around the center logo with zero overlap.
 
-### ✏️ PDF Editor Real-Time Touch Preview & Drawing
-- **Live Finger Touch Cursor**: Renders a glowing touch pointer ring beneath your finger in real time during drag/draw gestures.
-- **Smooth Bezier Freehand Ink**: Quadratic bezier curve interpolation for natural drawing with a dynamic stroke weight slider (`1px` – `20px`).
-- **Dedicated Eraser Tool**: Delete freehand ink strokes and annotations easily.
-- **Normalized Drag Rectangles**: Smooth live highlight and redaction bounding boxes when dragging backwards or diagonally.
+### 📝 On-Page Interactive OCR Canvas
+- **Dynamic Font Resizing**: Font size slider (`8pt` – `48pt`), `A-`/`A+` step controls, 2-finger pinch scaling, and 1-tap quick resize toolbar chips (`[ Enlarge + ]`, `[ Shrink - ]`, `[ Wider ↔ ]`).
+- **Multi-Line Wrapping**: Wrapped text support with zero text cutoff or hidden lines on multi-line text and newlines (`\n`).
+- **Direct Canvas Editing**: Tap any recognized sentence on top of the document photo to edit, reflow, scale, or replace text live.
 
-### 📱 100% Scannable QR Generator
-- **Level H Error Recovery (30%)**: Enforces `QrErrorCorrectLevel.H` so QR codes with embedded center logos retain 100% data integrity.
-- **White Background Logo Shield**: Protective white background shield container isolating center logo pixels from surrounding dark QR modules.
-- **High-Contrast Wallpaper Backing Card**: Automatically renders a high-contrast backing card when custom wallpaper images are selected.
-- **1-Tap Brand Presets**: Quick logos for WhatsApp, Instagram, Facebook, LinkedIn, Wi-Fi, Phone, Email, Location, and Globe.
-
-### 🔬 Upgraded OCR Engine (Text-to-Speech & Translation)
-- **Structured Entity Extraction**: Automatically extracts and highlights **Emails**, **Phone Numbers**, **URLs**, **Dates**, and **Amounts / Prices** from scanned text.
-- **Text-To-Speech (TTS) Reader**: Audio player controls (`flutter_tts`) to listen to recognized document text out loud.
-- **On-Device Machine Translation**: Translates OCR text locally into 50+ languages using `google_mlkit_translation` without an internet connection.
-- **Multi-Script Engine**: Supports Latin, Devanagari, Japanese, Korean, and Chinese character recognition.
+### 📂 Document Library Context Menu
+- **Long-Press Executive Action Sheet**: Long-press any document tile in the grid or list view to immediately **Share PDF**, **Delete Document**, or **Toggle Favorites** with medium haptic feedback.
+- **Pure 1-Page Scanned PDFs**: Streamlined PDF engine producing pure scanned pages without trailing plain text pages.
 
 ---
 
@@ -65,8 +57,8 @@ Grab the latest production APK from the [**Releases page**](https://github.com/O
 
 ### QR & Barcode Generator
 - 16 content types: URL, text, Wi-Fi, contact, email, SMS, phone, location, event, crypto, WhatsApp, Instagram, etc.
-- **Design styles** (Classic, Rounded, Dots, Smooth), curated **color themes**, custom colors, and center logo shield
-- Real-time high-resolution PNG export
+- **Design styles** (Classic, Rounded, Dots, Smooth), curated **color themes**, custom dual-tone eye colors, CTA frame banners, and center logo shield
+- Real-time high-resolution PNG export & printable A4 PDF sheet generation
 
 ### PDF Toolkit & Editor
 - **Live Editor** — text, signatures, stamps, highlights, redaction, eraser, and freehand drawing
@@ -97,9 +89,6 @@ Grab the latest production APK from the [**Releases page**](https://github.com/O
 git clone https://github.com/OmVK/xscan.git
 cd xscan
 flutter pub get
-
-# Generate Isar database code
-dart run build_runner build --delete-conflicting-outputs
 
 # Run in debug mode
 flutter run
