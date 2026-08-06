@@ -68,16 +68,24 @@ jobs:
         run: flutter pub get
 
       - name: Configure release keystore (if secrets set)
-        if: secrets.KEYSTORE_BASE64 != ''
         shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
-          cat > android/key.properties <<EOF
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            cat > android/key.properties <<EOF
           storeFile=app/upload-keystore.jks
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEYSTORE_ALIAS }}
-          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEYSTORE_ALIAS
+          keyPassword=$KEYSTORE_PASSWORD
           EOF
+            echo "Keystore configured."
+          else
+            echo "No keystore secrets set — building unsigned APK."
+          fi
 
       - name: Build APK (split per ABI)
         run: flutter build apk --release --split-per-abi
@@ -110,16 +118,24 @@ jobs:
         run: flutter pub get
 
       - name: Configure release keystore (if secrets set)
-        if: secrets.KEYSTORE_BASE64 != ''
         shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
-          cat > android/key.properties <<EOF
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            cat > android/key.properties <<EOF
           storeFile=app/upload-keystore.jks
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEYSTORE_ALIAS }}
-          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEYSTORE_ALIAS
+          keyPassword=$KEYSTORE_PASSWORD
           EOF
+            echo "Keystore configured."
+          else
+            echo "No keystore secrets set — building unsigned APK."
+          fi
 
       - name: Build AAB
         run: flutter build appbundle --release
