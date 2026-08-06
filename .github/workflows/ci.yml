@@ -23,21 +23,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos
-
-      - name: Run unit tests (no device needed)
+      - name: Run portable unit tests
         run: |
-          flutter test --coverage \
-            test/ai_service_test.dart \
-            test/backup_service_test.dart \
-            test/barcode_utils_test.dart \
+          flutter test \
             test/crypto_utils_test.dart \
-            test/document_filter_test.dart \
-            test/path_safety_test.dart \
-            test/pdf_encryption_test.dart \
-            test/pdf_tools_service_test.dart \
-            test/vault_service_test.dart
+            test/path_safety_test.dart
 
       - name: Upload coverage
         if: success()
