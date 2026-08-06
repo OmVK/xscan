@@ -50,6 +50,7 @@ class SettingsScreen extends ConsumerWidget {
     if (result != null) {
       onSave(result.trim().isEmpty ? null : result.trim());
     }
+    controller.dispose();
   }
 
   Future<String?> _promptPassword(BuildContext context, {String? hint}) async {
@@ -81,6 +82,7 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+    controller.dispose();
     return result?.trim().isEmpty == true ? null : result?.trim();
   }
 

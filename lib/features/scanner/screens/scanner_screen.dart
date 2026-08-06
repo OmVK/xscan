@@ -660,6 +660,26 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
   // ──────────────────── Barcode Detection ────────────────────
 
+  /// Cut-off for a single continuous batch session.
+  static const int _maxBatchItems = 500;
+
+  /// Cut-off for the dedup tracker before it is reset.
+  static const int _maxSeenValues = 10000;
+
+  /// CSV-escapes a cell and neutralizes spreadsheet formula injection
+  /// (`=`, `+`, `-`, `@`, tab) which Excel/Sheets would otherwise execute.
+  String _csvCell(String value) {
+    var v = value;
+    if (v.startsWith('=') ||
+        v.startsWith('+') ||
+        v.startsWith('-') ||
+        v.startsWith('@') ||
+        v.startsWith('\t')) {
+      v = "'$v";
+    }
+    return '"${v.replaceAll('"', '""')}"';
+  }
+
   void _onDetect(BarcodeCapture capture) {
     if (_mode != ScanMode.barcode) return;
     final barcodes = capture.barcodes;
@@ -668,8 +688,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     if (_continuous) {
       var added = 0;
       for (final b in barcodes) {
+        if (_batch.length >= _maxBatchItems) break;
         final value = b.rawValue;
         if (value == null || _seen.contains(value)) continue;
+        if (_seen.length >= _maxSeenValues) {
+          _seen.clear();
+        }
         _seen.add(value);
         _batch.add(_BatchItem(value, BarcodeUtils.semanticType(b), timestamp: DateTime.now()));
         added++;
@@ -1053,7 +1077,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       final buffer = StringBuffer('Value,Format,Timestamp\n');
       for (final item in _batch) {
         final ts = item.timestamp?.toIso8601String() ?? '';
-        buffer.writeln('"${item.value}","${item.format}","$ts"');
+        buffer.writeln('${_csvCell(item.value)},${_csvCell(item.format)},${_csvCell(ts)}');
       }
       final file = File('${dir.path}/barcode_batch_$timestamp.csv');
       await file.writeAsString(buffer.toString());
@@ -1122,29 +1146,34 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       }
 
       final ocrService = OcrService(script: _ocrScript);
-      final buffer = StringBuffer();
-      for (var i = 0; i < persistedPaths.length; i++) {
-        final text = await ocrService.extractTextFromImage(persistedPaths[i]);
-        if (text == null || text.trim().isEmpty) continue;
-        if (buffer.isNotEmpty) buffer.write('\n\n--- Page ${i + 1} ---\n\n');
-        buffer.write(text);
+      OcrResult structured;
+      try {
+        final buffer = StringBuffer();
+        for (var i = 0; i < persistedPaths.length; i++) {
+          final text = await ocrService.extractTextFromImage(persistedPaths[i]);
+          if (text == null || text.trim().isEmpty) continue;
+          if (buffer.isNotEmpty) buffer.write('\n\n--- Page ${i + 1} ---\n\n');
+          buffer.write(text);
+        }
+
+        final category = _mode == ScanMode.ocr ? 'Notes' : 'Documents';
+        final newDoc = ScanDocument()
+          ..title = 'Scan ${DateTime.now().toLocal().toString().split('.')[0]}'
+          ..filePath = persistedPaths.first
+          ..additionalFilePaths =
+              persistedPaths.length > 1 ? persistedPaths.sublist(1) : null
+          ..ocrText = buffer.toString()
+          ..dateCreated = DateTime.now()
+          ..fileType = 'scan'
+          ..category = category;
+
+        await ref.read(isarServiceProvider).saveDocument(newDoc);
+
+        // Always release the native recognizer, even on failure.
+        structured = await ocrService.extractStructured(persistedPaths.first);
+      } finally {
+        ocrService.dispose();
       }
-
-      final category = _mode == ScanMode.ocr ? 'Notes' : 'Documents';
-      final newDoc = ScanDocument()
-        ..title = 'Scan ${DateTime.now().toLocal().toString().split('.')[0]}'
-        ..filePath = persistedPaths.first
-        ..additionalFilePaths =
-            persistedPaths.length > 1 ? persistedPaths.sublist(1) : null
-        ..ocrText = buffer.toString()
-        ..dateCreated = DateTime.now()
-        ..fileType = 'scan'
-        ..category = category;
-
-      await ref.read(isarServiceProvider).saveDocument(newDoc);
-
-      final structured = await ocrService.extractStructured(persistedPaths.first);
-      ocrService.dispose();
 
       if (!mounted) return;
       HapticFeedback.heavyImpact();
@@ -1189,8 +1218,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     try {
       final persistedPath = await AppStorage.persistPage(file.path);
       final ocrService = OcrService(script: _ocrScript);
-      final structured = await ocrService.extractStructured(persistedPath);
-      ocrService.dispose();
+      final OcrResult structured;
+      try {
+        structured = await ocrService.extractStructured(persistedPath);
+      } finally {
+        ocrService.dispose();
+      }
 
       if (!mounted) return;
 

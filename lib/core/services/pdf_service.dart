@@ -1,7 +1,11 @@
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import 'package:xscan/core/data/models/scan_document.dart';
 import 'package:xscan/core/services/app_storage.dart';
@@ -9,68 +13,87 @@ import 'package:xscan/core/services/app_storage.dart';
 import 'package:xscan/features/scanner/services/ocr_service.dart';
 
 class PdfService {
+  /// Builds and saves the PDF for [document] on a background isolate so the UI
+  /// stays responsive. Pages are downscaled (max ~2200px) before embedding to
+  /// keep the output small and memory low.
   Future<String> generatePdfFromDocument(
     ScanDocument document, {
     String? watermark,
     String? password,
   }) async {
-    final pdf = pw.Document();
+    final allFilePaths = [document.filePath, ...?document.additionalFilePaths];
 
-    final pageTheme = pw.PageTheme(
-      pageFormat: PdfPageFormat.a4,
-      margin: pw.EdgeInsets.zero,
-      buildForeground: (pw.Context context) {
-        if (watermark != null && watermark.isNotEmpty) {
-          return pw.Center(
-            child: pw.Transform.rotate(
-              angle: -0.785,
-              child: pw.Text(
-                watermark,
-                style: pw.TextStyle(
-                  color: const PdfColor(0, 0, 0, 0.2),
-                  fontSize: 80,
-                  fontWeight: pw.FontWeight.bold,
+    final bytes = await Isolate.run(() async {
+      final pdf = pw.Document();
+
+      final pageTheme = pw.PageTheme(
+        pageFormat: PdfPageFormat.a4,
+        margin: pw.EdgeInsets.zero,
+        buildForeground: (pw.Context context) {
+          if (watermark != null && watermark.isNotEmpty) {
+            return pw.Center(
+              child: pw.Transform.rotate(
+                angle: -0.785,
+                child: pw.Text(
+                  watermark,
+                  style: pw.TextStyle(
+                    color: const PdfColor(0, 0, 0, 0.2),
+                    fontSize: 80,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-          );
-        }
-        return pw.SizedBox();
-      },
-    );
-
-    final allFilePaths = [document.filePath, ...?(document.additionalFilePaths)];
-
-    for (final path in allFilePaths) {
-      final imageFile = File(path);
-      if (!imageFile.existsSync()) continue;
-      final imageBytes = await imageFile.readAsBytes();
-      final image = pw.MemoryImage(imageBytes);
-
-      pdf.addPage(
-        pw.Page(
-          pageTheme: pageTheme,
-          build: (pw.Context context) {
-            return pw.Center(
-              child: pw.Image(image, fit: pw.BoxFit.contain),
             );
-          },
-        ),
+          }
+          return pw.SizedBox();
+        },
       );
-    }
 
-    final bytes = await pdf.save();
+      for (final path in allFilePaths) {
+        final imageFile = File(path);
+        if (!imageFile.existsSync()) continue;
+        final imageBytes = _downscale(path);
+        pdf.addPage(
+          pw.Page(
+            pageTheme: pageTheme,
+            build: (pw.Context context) {
+              return pw.Center(
+                child: pw.Image(pw.MemoryImage(imageBytes), fit: pw.BoxFit.contain),
+              );
+            },
+          ),
+        );
+      }
+
+      // Note: pdf.save() returned standalone; isolate IO is pure Dart.
+      return pdf.save();
+    });
 
     if (password != null && password.isNotEmpty) {
       return _encryptAndSave(bytes, password);
     }
 
-    final outputDir = await getApplicationDocumentsDirectory();
-    final sanitizedTitle =
-        document.title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-    final outputFile = File('${outputDir.path}/$sanitizedTitle.pdf');
-    await outputFile.writeAsBytes(bytes, flush: true);
-    return outputFile.path;
+    return await AppStorage.writePdf(document.title, bytes);
+  }
+
+  /// Reads + downscales an image to at most 2200px on its longest edge so
+  /// multi-page scans don't embed full-resolution bitmaps into the PDF.
+  static Uint8List _downscale(String path) {
+    final raw = File(path).readAsBytesSync();
+    final decoded = img.decodeImage(raw);
+    if (decoded == null) {
+      return Uint8List.fromList(raw);
+    }
+
+    var image = decoded;
+    final longest = math.max(image.width, image.height);
+    if (longest > 2000) {
+      image = image.width >= image.height
+          ? img.copyResize(image, width: 2000)
+          : img.copyResize(image, height: 2000);
+    }
+    final isPng = RegExp(r'\.png$', caseSensitive: false).hasMatch(path);
+    return isPng ? img.encodePng(image) : img.encodeJpg(image, quality: 90);
   }
 
   /// Generates a Searchable & Editable PDF with precise OCR text overlays matching coordinates.

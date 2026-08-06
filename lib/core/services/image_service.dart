@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:image/image.dart' as img;
@@ -49,17 +50,24 @@ class ImageEdit {
 
 class ImageService {
   /// Decodes, applies [edit], and returns the processed image bytes as PNG.
+  ///
+  /// Runs on a background isolate so full-resolution decode/encode never
+  /// blocks the UI thread.
   static Future<List<int>> processToPng(String path, ImageEdit edit) async {
-    final image = await _decode(path);
-    final processed = _apply(image, edit);
-    return img.encodePng(processed);
+    return Isolate.run(() {
+      final image = _decodeSync(path);
+      final processed = _apply(image, edit);
+      return img.encodePng(processed);
+    });
   }
 
   /// Applies [edit] and persists the result as a page, returning its path.
   static Future<String> processAndSave(String path, ImageEdit edit) async {
-    final image = await _decode(path);
-    final processed = _apply(image, edit);
-    final bytes = img.encodeJpg(processed, quality: 92);
+    final bytes = await Isolate.run(() {
+      final image = _decodeSync(path);
+      final processed = _apply(image, edit);
+      return img.encodeJpg(processed, quality: 92);
+    });
     final tmp = File(
       '${Directory.systemTemp.path}/edit_${DateTime.now().microsecondsSinceEpoch}.jpg',
     );
@@ -77,8 +85,8 @@ class ImageService {
         saturation: 8,
       );
 
-  static Future<img.Image> _decode(String path) async {
-    final bytes = await File(path).readAsBytes();
+  static img.Image _decodeSync(String path) {
+    final bytes = File(path).readAsBytesSync();
     final decoded = img.decodeImage(bytes);
     if (decoded == null) {
       throw Exception('Unsupported or corrupt image: $path');
@@ -193,37 +201,48 @@ class ImageService {
   }
 
   /// Converts an image file to another format. Returns exported file path.
+  ///
+  /// Runs on a background isolate.
   static Future<String> convertFormat(String path, String format) async {
-    final image = await _decode(path);
-    List<int> bytes;
-    String ext;
+    final bytes = await Isolate.run(() {
+      final image = _decodeSync(path);
+      return _encodeImage(image, format);
+    });
+    final ext = _extFor(format);
+    return AppStorage.writeExport('converted.$ext', bytes);
+  }
+
+  static List<int> _encodeImage(img.Image image, String format) {
     switch (format.toLowerCase()) {
       case 'png':
-        bytes = img.encodePng(image);
-        ext = 'png';
-        break;
+        return img.encodePng(image);
       case 'jpg':
       case 'jpeg':
-        bytes = img.encodeJpg(image, quality: 92);
-        ext = 'jpg';
-        break;
+        return img.encodeJpg(image, quality: 92);
       case 'webp':
-        bytes = img.encodeWebP(image);
-        ext = 'webp';
-        break;
+        return img.encodeWebP(image);
       case 'tiff':
-        bytes = img.encodeTiff(image);
-        ext = 'tiff';
-        break;
+        return img.encodeTiff(image);
       case 'bmp':
-        bytes = img.encodeBmp(image);
-        ext = 'bmp';
-        break;
+        return img.encodeBmp(image);
       default:
-        bytes = img.encodePng(image);
-        ext = 'png';
+        return img.encodePng(image);
     }
-    final name = 'converted.$ext';
-    return AppStorage.writeExport(name, bytes);
+  }
+
+  static String _extFor(String format) {
+    switch (format.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'jpg';
+      case 'webp':
+        return 'webp';
+      case 'tiff':
+        return 'tiff';
+      case 'bmp':
+        return 'bmp';
+      default:
+        return 'png';
+    }
   }
 }

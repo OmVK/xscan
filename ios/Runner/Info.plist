@@ -72,7 +72,5 @@
 	<string>XScan needs access to your photo library to import images for scanning and OCR.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>XScan needs permission to save edited documents and PDFs to your photos.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>XScan needs microphone access to record videos if necessary.</string>
 </dict>
 </plist>

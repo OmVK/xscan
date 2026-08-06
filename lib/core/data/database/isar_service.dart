@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
@@ -19,7 +20,7 @@ class IsarService {
       return await Isar.open(
         [ScanDocumentSchema],
         directory: dir.path,
-        inspector: true,
+        inspector: false,
       );
     }
     return Future.value(Isar.getInstance());
@@ -98,7 +99,11 @@ class IsarService {
         await sink.close();
       }
       await file.delete();
-    } catch (_) {}
+    } catch (e) {
+      // Surface the failure so it isn't silently swallowed: a wipe that fails
+      // can leave plaintext files behind. The DB row is still removed.
+      debugPrint('Warning: file deletion/secure-wipe failed for $path: $e');
+    }
   }
 
   Future<void> emptyTrash({bool secure = true}) async {
@@ -154,6 +159,11 @@ class IsarService {
   /// Returns the temp path, or the original path if not encrypted.
   Future<String> decryptForViewing(String filePath) async {
     return _vault.decryptToTemp(filePath);
+  }
+
+  /// Deletes a temp file created by [decryptForViewing] (best-effort).
+  Future<void> disposeTempFile(String filePath) async {
+    await VaultService.deleteTempFile(filePath);
   }
 
   Stream<List<ScanDocument>> listenToDocuments() async* {

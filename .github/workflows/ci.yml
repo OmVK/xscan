@@ -56,6 +56,18 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Configure release keystore (if secrets set)
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        shell: bash
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storeFile=app/upload-keystore.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEYSTORE_ALIAS }}
+          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          EOF
+
       - name: Build APK (split per ABI)
         run: flutter build apk --release --split-per-abi
 
@@ -85,6 +97,18 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Configure release keystore (if secrets set)
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        shell: bash
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storeFile=app/upload-keystore.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEYSTORE_ALIAS }}
+          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          EOF
 
       - name: Build AAB
         run: flutter build appbundle --release

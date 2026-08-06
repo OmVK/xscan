@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:ui' as ui;
 
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as img;
 
 /// Extracted structured entities from OCR text.
 class OcrEntities {
@@ -249,14 +251,17 @@ class OcrService {
     );
   }
 
+  /// Decodes image dimensions on a background isolate so a full-resolution
+  /// decode never blocks the UI thread.
   Future<ui.Size> _imageSize(String path) async {
-    final bytes = await File(path).readAsBytes();
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    final w = frame.image.width.toDouble();
-    final h = frame.image.height.toDouble();
-    frame.image.dispose();
-    return ui.Size(w, h);
+    final dims = await Isolate.run(() {
+      final bytes = File(path).readAsBytesSync();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
+      return (width: decoded.width, height: decoded.height);
+    });
+    if (dims == null) return ui.Size.zero;
+    return ui.Size(dims.width.toDouble(), dims.height.toDouble());
   }
 
   void dispose() {

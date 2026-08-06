@@ -71,6 +71,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   StreamSubscription<List<IncomingFile>>? _shareSub;
   Timer? _searchDebounce;
   final Set<String> _fileExistsCache = {};
+  final Set<String> _knownMissing = {};
+  final Set<String> _pendingFileChecks = {};
 
   // Lazy loading state for document grid.
   static const int _pageSize = 20;
@@ -83,27 +85,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     _initShareHandling();
   }
 
-  /// Checks file existence using a cache to avoid synchronous disk I/O on the UI thread.
+    /// Checks file existence asynchronously (never blocking the UI thread).
+  ///
+  /// Results are cached in [_fileExistsCache] / [_knownMissing]. Until a check
+  /// resolves we optimistically assume the file exists so thumbnails render
+  /// immediately; a single setState refreshes once the async check lands.
   bool _fileExists(String path) {
     if (_fileExistsCache.contains(path)) return true;
-    // First check is async-friendly via the cache; fallback to sync for correctness.
-    final exists = File(path).existsSync();
-    if (exists) _fileExistsCache.add(path);
-    return exists;
-  }
+    if (_knownMissing.contains(path)) return false;
+    if (_pendingFileChecks.contains(path)) return true;
 
-  void _rebuildFileCache(List<ScanDocument> docs) {
-    for (final doc in docs) {
-      if (doc.filePath.isNotEmpty) {
-        File(doc.filePath).exists().then((exists) {
-          if (exists) {
-            _fileExistsCache.add(doc.filePath);
-          } else {
-            _fileExistsCache.remove(doc.filePath);
-          }
-        });
-      }
-    }
+    _pendingFileChecks.add(path);
+    File(path).exists().then((exists) {
+      if (!mounted) return;
+      setState(() {
+        _pendingFileChecks.remove(path);
+        if (exists) {
+          _fileExistsCache.add(path);
+        } else {
+          _knownMissing.add(path);
+        }
+      });
+    }).catchError((Object _) {
+      if (!mounted) return;
+      setState(() {
+        _pendingFileChecks.remove(path);
+        _knownMissing.add(path);
+      });
+    });
+    return true;
   }
 
   Future<void> _initShareHandling() async {
@@ -450,8 +460,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               if (filteredDocs.isEmpty) {
                 return _buildEmptyState(selectedCategory);
               }
-
-              _rebuildFileCache(filteredDocs);
 
               final visibleDocs = filteredDocs
                   .take(_visibleCount.clamp(0, filteredDocs.length))
@@ -1611,8 +1619,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final file = await ImagePicker().pickImage(source: ImageSource.gallery);
             if (file == null || !mounted) return;
             final ocr = OcrService();
-            final res = await ocr.extractStructured(file.path);
-            ocr.dispose();
+            final OcrResult res;
+            try {
+              res = await ocr.extractStructured(file.path);
+            } finally {
+              ocr.dispose();
+            }
             if (mounted) showOcrResultSheet(context, res);
           }),
         ],

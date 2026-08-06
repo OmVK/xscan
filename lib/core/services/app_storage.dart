@@ -117,4 +117,89 @@ class AppStorage {
     final file = File(p.join(base.path, _qrPresetsFile));
     await file.writeAsString(jsonEncode(current), flush: true);
   }
+
+  /// Cleans up generated artifacts so the app container doesn't grow forever.
+  ///
+  /// Prunes old files in the `exports`, `pdfs`, and vault `tmp` directories:
+  /// files older than [maxAge] are deleted, keeping at most [keepNewest] files.
+  /// User-scanned pages and database files are never touched.
+  static Future<void> cleanupOldArtifacts({
+    Duration maxAge = const Duration(days: 90),
+    int keepNewest = 200,
+  }) async {
+    final now = DateTime.now();
+
+    try {
+      // Stale decrypted vault temp files (should never exist after a session,
+      // but a crash can leave one behind — these contain plaintext documents).
+      await _cleanupDir(
+        await _subDir('tmp'),
+        now,
+        maxAge: const Duration(days: 1),
+        keepNewest: 0,
+        predicate: (name) => name.endsWith('.tmp'),
+      );
+    } catch (_) {}
+
+    for (final dirName in ['exports', 'pdfs']) {
+      try {
+        await _cleanupDir(
+          await _subDir(dirName),
+          now,
+          maxAge: maxAge,
+          keepNewest: keepNewest,
+        );
+      } catch (_) {}
+    }
+  }
+
+  static Future<void> _cleanupDir(
+    Directory dir,
+    DateTime now, {
+    required Duration maxAge,
+    required int keepNewest,
+    bool Function(String name)? predicate,
+  }) async {
+    if (!await dir.exists()) return;
+
+    final files = <File>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is File) {
+        final name = p.basename(entity.path);
+        if (predicate != null && !predicate(name)) continue;
+        files.add(entity);
+      }
+    }
+
+    files.sort((a, b) {
+      try {
+        return b.statSync().modified.compareTo(a.statSync().modified);
+      } catch (_) {
+        return 0;
+      }
+    });
+
+    var kept = 0;
+    for (final file in files) {
+      kept++;
+      if (kept > keepNewest) {
+        await _safeDelete(file);
+        continue;
+      }
+      try {
+        final modified = (await file.stat()).modified;
+        if (now.difference(modified) > maxAge) {
+          await _safeDelete(file);
+        }
+      } catch (_) {}
+    }
+  }
+
+  static Future<void> _safeDelete(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // Best-effort cleanup.
+    }
+  }
 }

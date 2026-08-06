@@ -3,15 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xscan/core/providers/settings_provider.dart';
+import 'package:xscan/core/services/app_storage.dart';
+import 'package:xscan/core/syncfusion_license.dart';
 import 'package:xscan/core/theme/app_theme.dart';
 import 'package:xscan/features/auth/screens/lock_screen.dart';
 import 'package:xscan/features/onboarding/screens/onboarding_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Database
-  // IsarService auto-initializes in its constructor.
+
+  // Register the Syncfusion license (no-op until a key is configured).
+  SyncSettings.register();
+
+  // Background maintenance: prune stale decrypted vault temp files and old
+  // generated exports so app storage never grows without bound.
+  AppStorage.cleanupOldArtifacts().catchError((Object _) {});
 
   // Initialize SharedPreferences
   final prefs = await SharedPreferences.getInstance();

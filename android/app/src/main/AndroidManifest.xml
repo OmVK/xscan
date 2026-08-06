@@ -6,13 +6,11 @@
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.camera.autofocus" />
 
-    <!-- Storage (For saving PDFs/Images and File Manager) -->
+    <!-- Storage (For saving PDFs/Images via the Storage Access Framework) -->
     <!-- For Android 10 and below -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:replace="android:maxSdkVersion" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <!-- For Android 11+ (Scoped Storage / All Files Access for file manager integration) -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
-    <!-- For Android 13+ Media -->
+    <!-- For Android 13+ Media via Photo Picker / READ_MEDIA_IMAGES -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <!-- Internet -->
@@ -21,7 +19,9 @@
     <application
         android:label="XScan"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

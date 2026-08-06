@@ -59,3 +59,10 @@ _Ship a feature? Move it here with the release version._
   (editor, merge, split, compress, watermark, protect, fill forms, flatten, PDF/A, to-images, to-text),
   image editor & format conversion, favorites/archive/trash/hidden shelves, biometric lock,
   offline AI assistant, translation, TTS, print, local backup/restore, Material You theming.
+
+- v2.0.0 — **Major Release**
+  - ✅ **Studio QR Creator Suite** — Brand logos (WhatsApp, Instagram), CTA banner badges, dual-tone eye corners, printable A4 multi-QR PDF sheets, native module clearing.
+  - ✅ **On-Page Interactive OCR Canvas** — Dynamic font resizing (slider + pinch), multi-line wrapping, direct canvas tap-to-edit.
+  - ✅ **Document Library Context Menu** — Long-press action sheet (Share, Delete, Favorites), pure 1-page scanned PDFs.
+  - ✅ **AES-256-GCM Encrypted Vault** — Authenticated encryption for hidden documents with PBKDF2-HMAC-SHA256 key derivation; encrypted `.enc` backups with zip-slip protection.
+  - ✅ **CI/CD with GitHub Actions** — Automated analyze + test + split-per-ABI APK + AAB build pipeline; auto-creates GitHub Release on tag push.

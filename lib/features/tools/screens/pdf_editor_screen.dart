@@ -806,6 +806,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     if (text != null && text.isNotEmpty) {
       setState(() => o.text = text);
     }
+    controller.dispose();
   }
 
   Future<void> _addText() async {

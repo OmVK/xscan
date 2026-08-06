@@ -36,11 +36,57 @@ final folderFilterProvider = StateProvider<String?>((ref) => null);
 /// Optional tag filter.
 final tagFilterProvider = StateProvider<String?>((ref) => null);
 
+/// Pre-computed, lower-cased search fields for each document, built only when
+/// the underlying documents change. Avoids lowercasing every document's OCR
+/// text on every keystroke/filter change (which was stalling the grid).
+class _SearchFields {
+  const _SearchFields({
+    required this.title,
+    required this.ocrText,
+    required this.notes,
+    required this.folder,
+    required this.barcodeFormat,
+    required this.tags,
+  });
+
+  final String title;
+  final String? ocrText;
+  final String? notes;
+  final String? folder;
+  final String? barcodeFormat;
+  final List<String> tags;
+
+  static _SearchFields from(ScanDocument doc) => _SearchFields(
+        title: doc.title.toLowerCase(),
+        ocrText: doc.ocrText?.toLowerCase(),
+        notes: doc.notes?.toLowerCase(),
+        folder: doc.folder?.toLowerCase(),
+        barcodeFormat: doc.barcodeFormat?.toLowerCase(),
+        tags: doc.tags.map((t) => t.toLowerCase()).toList(),
+      );
+
+  bool matches(String query) =>
+      query.isEmpty ||
+      title.contains(query) ||
+      (ocrText?.contains(query) ?? false) ||
+      (notes?.contains(query) ?? false) ||
+      (folder?.contains(query) ?? false) ||
+      (barcodeFormat?.contains(query) ?? false) ||
+      tags.any((t) => t.contains(query));
+}
+
+final documentsSearchIndexProvider =
+    Provider<Map<int, _SearchFields>>((ref) {
+  final docs = ref.watch(documentsStreamProvider).value ?? const [];
+  return {for (final doc in docs) doc.id: _SearchFields.from(doc)};
+});
+
 final filteredDocumentsProvider =
     Provider<AsyncValue<List<ScanDocument>>>((ref) {
   final docsAsync = ref.watch(documentsStreamProvider);
+  final searchIndex = ref.watch(documentsSearchIndexProvider);
   final category = ref.watch(categoryFilterProvider);
-  final searchQuery = ref.watch(searchQueryProvider).toLowerCase();
+  final query = ref.watch(searchQueryProvider).toLowerCase();
   final view = ref.watch(documentViewProvider);
   final dateRange = ref.watch(dateRangeProvider);
   final fileType = ref.watch(fileTypeFilterProvider);
@@ -81,17 +127,8 @@ final filteredDocumentsProvider =
               doc.dateCreated
                   .isBefore(dateRange.end.add(const Duration(days: 1))));
 
-      final matchesSearch = searchQuery.isEmpty ||
-          doc.title.toLowerCase().contains(searchQuery) ||
-          (doc.ocrText != null &&
-              doc.ocrText!.toLowerCase().contains(searchQuery)) ||
-          (doc.notes != null &&
-              doc.notes!.toLowerCase().contains(searchQuery)) ||
-          (doc.folder != null &&
-              doc.folder!.toLowerCase().contains(searchQuery)) ||
-          (doc.barcodeFormat != null &&
-              doc.barcodeFormat!.toLowerCase().contains(searchQuery)) ||
-          doc.tags.any((t) => t.toLowerCase().contains(searchQuery));
+      final matchesSearch =
+          searchIndex[doc.id]?.matches(query) ?? query.isEmpty;
 
       return matchesCategory &&
           matchesType &&

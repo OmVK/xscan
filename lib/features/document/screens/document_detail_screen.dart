@@ -11,6 +11,7 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:xscan/core/data/models/scan_document.dart';
 import 'package:xscan/core/services/pdf_service.dart';
 import 'package:xscan/core/services/ai_service.dart';
+import 'package:xscan/core/services/vault_service.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xscan/core/services/app_storage.dart';
@@ -37,6 +38,22 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   final PdfService _pdfService = PdfService();
   String? _pdfPath;
   bool _isLoading = true;
+
+  /// Monotonic generation counter so concurrent [generatePdf] runs can't race:
+  /// only the newest request may commit its result to the UI.
+  int _pdfGenToken = 0;
+
+  /// Decrypted temp copies created for hidden documents; cleaned up in
+  /// [dispose] if the screen is torn down mid-generation.
+  final List<String> _tempPaths = [];
+
+  @override
+  void dispose() {
+    for (final t in List.of(_tempPaths)) {
+      VaultService.deleteTempFile(t);
+    }
+    super.dispose();
+  }
 
   Future<void> _addPage() async {
     final picker = ImagePicker();
@@ -127,6 +144,8 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   }
 
   Future<void> _generatePdf() async {
+    final token = ++_pdfGenToken;
+    final tempPaths = <String>[];
     try {
       final watermark = ref.read(pdfWatermarkProvider);
       final password = ref.read(pdfPasswordProvider);
@@ -135,10 +154,16 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       ScanDocument doc = widget.document;
       if (doc.isHidden) {
         final isarService = ref.read(isarServiceProvider);
-        final tempPaths = <String>[];
         final allPaths = [doc.filePath, ...?doc.additionalFilePaths];
         for (final p in allPaths) {
-          tempPaths.add(await isarService.decryptForViewing(p));
+          final tmp = await isarService.decryptForViewing(p);
+          // decryptForViewing returns the original (still-encrypted) path for
+          // unencrypted files — never treat those as disposable copies.
+          if (tmp != p) tempPaths.add(tmp);
+        }
+        _tempPaths.addAll(tempPaths);
+        if (tempPaths.isEmpty) {
+          throw StateError('Hidden document has no encrypted files.');
         }
         doc = ScanDocument()
           ..id = doc.id
@@ -166,20 +191,27 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         watermark: watermark,
         password: password,
       );
-      if (mounted) {
-        setState(() {
-          _pdfPath = path;
-          _isLoading = false;
-        });
-      }
+
+      // A newer generation may have started while we were working — only the
+      // newest request may write to the UI.
+      if (!mounted || token != _pdfGenToken) return;
+      setState(() {
+        _pdfPath = path;
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error generating PDF: $e')),
-        );
+      if (!mounted || token != _pdfGenToken) return;
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error generating PDF: $e')),
+      );
+    } finally {
+      // Never leave plaintext temp copies of hidden documents behind.
+      for (final t in tempPaths) {
+        await VaultService.deleteTempFile(t);
+        _tempPaths.remove(t);
       }
     }
   }
@@ -253,6 +285,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       await isarService.saveDocument(widget.document);
       setState(() {});
     }
+    controller.dispose();
   }
 
   Future<void> _editFolderAndTags() async {
@@ -310,6 +343,8 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       await ref.read(isarServiceProvider).saveDocument(widget.document);
       if (mounted) setState(() {});
     }
+    folderController.dispose();
+    tagsController.dispose();
   }
 
   Future<void> _toggleFlag(String flag) async {
@@ -370,6 +405,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       await ref.read(isarServiceProvider).saveDocument(widget.document);
       if (mounted) setState(() {});
     }
+    controller.dispose();
   }
 
   Future<void> _openAiAssistant() async {
@@ -526,16 +562,18 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     final scriptKey = ref.read(ocrScriptProvider);
     final script = OcrService.scripts[scriptKey] ?? TextRecognitionScript.latin;
     final ocrService = OcrService(script: script);
-    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Analyzing document text layout for Interactive Studio...'),
         duration: Duration(seconds: 1),
       ),
     );
-
-    final structured = await ocrService.extractStructured(widget.document.filePath);
-    ocrService.dispose();
+    final OcrResult structured;
+    try {
+      structured = await ocrService.extractStructured(widget.document.filePath);
+    } finally {
+      ocrService.dispose();
+    }
 
     if (mounted) {
       showOcrResultSheet(context, structured, imagePath: widget.document.filePath);

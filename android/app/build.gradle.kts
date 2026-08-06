@@ -15,6 +15,9 @@ if (keystorePropertiesFile.exists()) {
 val hasValidSigning = keystoreProperties["storeFile"] != null &&
         (keystoreProperties["storeFile"] as String).isNotEmpty()
 
+// CI runners have no keystore; their release artifacts are throwaway builds.
+val isCi = System.getenv("CI") == "true"
+
 android {
     namespace = "com.xscan.xscan"
     compileSdk = flutter.compileSdkVersion
@@ -46,13 +49,22 @@ android {
         release {
             signingConfig = if (hasValidSigning) {
                 signingConfigs.getByName("release")
-            } else {
-                // Fall back to debug signing for development builds only.
-                // For production releases, key.properties MUST be configured.
+            } else if (isCi) {
+                // CI artifacts are unsigned debug-key placeholders; production
+                // releases must go through a machine with key.properties.
                 signingConfigs.getByName("debug")
+            } else {
+                // Refuse to silently produce debug-signed "release" APKs
+                // locally — this masks missing keystore setup.
+                signingConfigs.getByName("release")
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            // Trim native binaries to phone-only ABIs for the release APK.
+            // Debug/test builds keep every ABI (incl. x86_64 emulators).
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -63,11 +75,18 @@ android {
 gradle.projectsEvaluated {
     tasks.withType<com.android.build.gradle.tasks.PackageApplication>().configureEach {
         doFirst {
-            if (!hasValidSigning) {
+            if (!hasValidSigning && !isCi) {
+                throw GradleException(
+                    "Cannot build a release APK: no keystore in android/key.properties.\n" +
+                    "Create android/key.properties with storeFile/keyAlias/keyPassword/storePassword " +
+                    "or use 'flutter run' / debug builds for development.\n" +
+                    "Refusing to silently sign a release build with the debug key."
+                )
+            }
+            if (!hasValidSigning && isCi) {
                 logger.warn(
-                    "WARNING: No valid signing configuration found in key.properties. " +
-                    "The release APK/AAB will be signed with the debug key. " +
-                    "This is NOT suitable for production releases or Play Store uploads."
+                    "CI build: no keystore configured — release artifact is signed " +
+                    "with the debug key and is NOT suitable for Play Store upload."
                 )
             }
         }
