@@ -16,7 +16,7 @@ bool zipEntryIsSafe(String basePath, String entryPath) {
   // `C:\evil` would simply be joined onto the base instead of escaping it.
   if (p.isAbsolute(entryPath)) return false;
 
-  final base = p.canonicalize(p.abs(basePath));
+  final base = p.canonicalize(p.absolute(basePath));
   final target = p.canonicalize(p.join(base, entryPath));
 
   final prefix = base.endsWith(p.separator) ? base : '$base${p.separator}';

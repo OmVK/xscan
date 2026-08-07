@@ -1147,6 +1147,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
       final ocrService = OcrService(script: _ocrScript);
       OcrResult structured;
+      ScanDocument? newDoc;
       try {
         final buffer = StringBuffer();
         for (var i = 0; i < persistedPaths.length; i++) {
@@ -1157,7 +1158,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
         }
 
         final category = _mode == ScanMode.ocr ? 'Notes' : 'Documents';
-        final newDoc = ScanDocument()
+        newDoc = ScanDocument()
           ..title = 'Scan ${DateTime.now().toLocal().toString().split('.')[0]}'
           ..filePath = persistedPaths.first
           ..additionalFilePaths =
@@ -1183,7 +1184,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
         context,
         MaterialPageRoute(
           builder: (_) => DocumentDetailScreen(
-            document: newDoc,
+            document: newDoc!,
             autoOpenOcr: false,
             initialOcrResult: structured,
           ),

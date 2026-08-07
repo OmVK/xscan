@@ -6,8 +6,8 @@
 
 Scan, edit, sign, convert, translate, and protect your documents — completely offline.
 
-[![Download](https://img.shields.io/badge/Download-v2.0.0%20Release-6C63FF?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v2.0.0)
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v2.0.0)
+[![Download](https://img.shields.io/badge/Download-v2.0.1%20Release-6C63FF?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v2.0.1)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android)](https://github.com/OmVK/xscan/releases/tag/v2.0.1)
 ![Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?style=for-the-badge&logo=flutter)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
@@ -17,15 +17,30 @@ Scan, edit, sign, convert, translate, and protect your documents — completely 
 
 ## Download
 
-Grab the latest production APK from the [**Releases page**](https://github.com/OmVK/xscan/releases/tag/v2.0.0):
+Grab the latest production APK from the [**Releases page**](https://github.com/OmVK/xscan/releases/tag/v2.0.1):
 
 | File | Best for | Size |
 | --- | --- | --- |
-| `app-arm64-v8a-release.apk` | **64-bit ARM** — modern phones (recommended) | ~100 MB |
-| `app-armeabi-v7a-release.apk` | **32-bit ARM** — older phones | ~90 MB |
-| `app-x86_64-release.apk` | **x86 64-bit** — emulators | ~100 MB |
+| `app-arm64-v8a-release.apk` | **64-bit ARM** — modern phones (recommended) | ~63 MB |
+| `app-armeabi-v7a-release.apk` | **32-bit ARM** — older phones | ~51 MB |
+| `app-x86_64-release.apk` | **x86 64-bit** — emulators | ~67 MB |
 
 **To install:** Enable *"Install unknown apps"* for your browser or file manager, then open the downloaded APK.
+
+---
+
+## What's New in v2.0.1
+
+### 🔧 Build & Stability Release
+- **Fixed Android build pipeline**: upgraded the Gradle toolchain to a compatible AGP/Gradle combo, added namespace + `compileSdk` handling for legacy plugins (e.g. `isar_flutter_libs`), and generated the missing Isar model code (`scan_document.g.dart`) in CI — release APKs now build cleanly from a fresh checkout.
+- **Fixed camera scan crash**: `newDoc` is now properly in scope when opening the saved document after scanning.
+- **Fixed encrypted backup export**: the app database is now correctly packed into `.zip`/`.enc` backups.
+- **Fixed OCR scan title** and PDF text extraction edge cases; decryption helper now returns the expected byte type (AES-256-GCM vault & backup remain fully backward compatible).
+- **Syncfusion licensing**: no license key needed on Syncfusion Flutter ≥ 18.3 (XScan uses 34.x) — removed the obsolete registration call.
+- **CI/CD**: unit tests (`crypto_utils`, `path_safety`) now run on every push/PR; Isar code generation added to the release build jobs.
+
+> [!WARNING]
+> **Vault format migration**: Files hidden with app versions before v2.0.0 are not decryptable by newer builds (they fail safely, nothing is corrupted). **Unhide any hidden documents on the old build before updating.**
 
 ---
 
@@ -53,9 +68,6 @@ Grab the latest production APK from the [**Releases page**](https://github.com/O
 
 ### ⚙️ CI/CD with GitHub Actions
 - Automated build pipeline: every push to `main` runs analysis + tests; every version tag builds split-per-ABI APKs, an AAB, and automatically creates a GitHub Release.
-
-> [!WARNING]
-> **Vault format migration**: Files hidden with app versions before v2.0.0 are not decryptable by newer builds (they fail safely, nothing is corrupted). **Unhide any hidden documents on the old build before updating.**
 
 ---
 
@@ -102,6 +114,9 @@ git clone https://github.com/OmVK/xscan.git
 cd xscan
 flutter pub get
 
+# Generate the Isar model code (scan_document.g.dart, git-ignored)
+dart run build_runner build --delete-conflicting-outputs
+
 # Run in debug mode
 flutter run
 ```
@@ -135,6 +150,7 @@ Output lands in `build/app/outputs/flutter-apk/app-release.apk`.
 ### 1. Run the checks
 ```bash
 flutter pub get
+dart run build_runner build --delete-conflicting-outputs   # isar model code
 flutter analyze
 flutter test     # includes the pure crypto + zip-slip unit tests (no device needed)
 ```
@@ -143,9 +159,11 @@ CI (`.github/workflows/ci.yml`) runs analyze + tests on every PR/push to `main` 
 builds split-per-ABI release APKs on `main` and AABs on tags.
 
 ### 2. Syncfusion license
-`lib/core/syncfusion_license.dart` registers the `SyncfusionFlutterPdf` license at
-startup. Paste your license key into `licenseKey` before releasing; without it the
-PDF engine runs in trial mode.
+XScan uses Syncfusion's commercial Flutter plugins (`syncfusion_flutter_pdf` /
+`syncfusion_flutter_pdfviewer`, version 34.x). Since Syncfusion Flutter 18.3.0.x,
+license key registration is **no longer required** — the controls run without a
+key, subject to the commercial or community license terms. See
+https://help.syncfusion.com/flutter/licensing/overview for details.
 
 ### 3. Create a release keystore
 Release builds **hard-fail** if `android/key.properties` is missing. Generate one once and keep it safe:

@@ -34,9 +34,15 @@ void main() {
       expect(zipEntryIsSafe(base, absoluteEscape), isFalse);
     });
 
-    test('rejects a sibling that merely shares the base name prefix', () {
+    test('rejects a sibling that shares the base name prefix', () {
+      // `documents2` starts with the base directory's name `documents` but
+      // is a sibling, not a child — a naive startsWith check on the raw base
+      // string would wrongly accept it inside the base.
       expect(
-        zipEntryIsSafe(p.join('app', 'documents2'), 'inside'),
+        zipEntryIsSafe(
+          p.join('app', 'documents'),
+          p.join('..', 'documents2', 'inside'),
+        ),
         isFalse,
       );
     });

@@ -60,7 +60,7 @@ Uint8List aesGcmOpen(Key key, Uint8List envelope) {
     final nonce = IV(envelope.sublist(0, aesGcmNonceLength));
     final sealed = Encrypted(envelope.sublist(aesGcmNonceLength));
     final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
-    return encrypter.decryptBytes(sealed, iv: nonce);
+    return Uint8List.fromList(encrypter.decryptBytes(sealed, iv: nonce));
   } catch (e) {
     throw CryptoException('GCM authentication failed', originalError: e);
   }

@@ -57,6 +57,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate isar model code
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Configure release keystore (if secrets set)
         shell: bash
         env:
@@ -106,6 +109,9 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Generate isar model code
+        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Configure release keystore (if secrets set)
         shell: bash

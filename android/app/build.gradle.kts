@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -60,11 +61,6 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
-            // Trim native binaries to phone-only ABIs for the release APK.
-            // Debug/test builds keep every ABI (incl. x86_64 emulators).
-            ndk {
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

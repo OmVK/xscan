@@ -52,7 +52,7 @@ class BackupService {
             }
           }
           if (File(dbPath).existsSync()) {
-            await encoder.addFile(dbPath);
+            await encoder.addFile(File(dbPath));
           }
         } finally {
           await encoder.close();
